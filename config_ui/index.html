@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Velo</title>
+  <link rel="stylesheet" href="/ui/style.css" />
+</head>
+<body>
+  <div class="app">
+    <div class="body">
+      <section class="preview">
+        <div class="preview-bar">
+          <span>Preview</span>
+          <div class="preview-bar-r">
+            <select id="preview-mode" title="Live uses more CPU. Prefer Lite or Off while streaming.">
+              <option value="off">Off</option>
+              <option value="lite" selected>Lite</option>
+              <option value="live">Live</option>
+            </select>
+            <label class="inline-check"><input type="checkbox" id="checker" checked /> Grid BG</label>
+            <button type="button" class="btn btn-sm" id="btn-reload">Reload</button>
+          </div>
+        </div>
+        <div class="stage" id="stage">
+          <div class="checker" id="checker-bg"></div>
+          <div class="preview-off" id="preview-off" aria-hidden="true">
+            Preview off
+          </div>
+          <div class="preview-viewport" id="preview-viewport">
+            <iframe id="frame" title="preview"></iframe>
+          </div>
+        </div>
+        <p class="obs-hint" id="obs-size-hint">Preview = OBS size <strong id="size-label">640 × 360</strong> (scaled to fit)</p>
+      </section>
+
+      <aside class="panel">
+        <div class="panel-body">
+        <nav class="sec-nav" id="sec-nav" aria-label="Settings sections">
+          <div class="sec-nav-label">Settings</div>
+          <button type="button" class="sec-btn active" data-section="presets"><span class="sec-dot"></span>Presets</button>
+          <button type="button" class="sec-btn" data-section="size"><span class="sec-dot"></span>Size</button>
+          <button type="button" class="sec-btn" data-section="background"><span class="sec-dot"></span>Background</button>
+          <button type="button" class="sec-btn" data-section="motion"><span class="sec-dot"></span>Motion</button>
+          <button type="button" class="sec-btn" data-section="trail"><span class="sec-dot"></span>Trail</button>
+          <button type="button" class="sec-btn" data-section="cursor"><span class="sec-dot"></span>Cursor</button>
+          <button type="button" class="sec-btn" data-section="hud"><span class="sec-dot"></span>HUD</button>
+          <button type="button" class="sec-btn" data-section="performance"><span class="sec-dot"></span>Performance</button>
+          <button type="button" class="sec-btn" data-section="obs"><span class="sec-dot"></span>OBS</button>
+          <button type="button" class="sec-btn" data-section="settings"><span class="sec-dot"></span>Settings</button>
+        </nav>
+
+        <div class="panel-main">
+        <div class="scroll">
+          <section class="block sec" data-section="presets">
+            <h2>Presets</h2>
+            <div class="dirty-banner" id="preset-dirty" hidden>
+              <div class="dirty-text">
+                <strong>Unsaved changes</strong>
+                <span id="preset-dirty-label">Settings don't match the selected preset.</span>
+              </div>
+              <div class="dirty-actions">
+                <button type="button" class="btn btn-sm" id="btn-dirty-update" hidden>Update</button>
+                <button type="button" class="btn btn-sm btn-ghost" id="btn-dirty-save">Save as new</button>
+              </div>
+            </div>
+
+            <div class="preset-browser" id="preset-list"></div>
+
+            <div class="preset-toolbar" id="preset-selected">
+              <strong class="preset-toolbar-name" id="preset-selected-name">None</strong>
+              <div class="preset-toolbar-actions">
+                <button type="button" class="btn btn-sm btn-ghost btn-icon" id="btn-preset-update" disabled title="Update saved preset">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
+                </button>
+                <button type="button" class="btn btn-sm btn-ghost btn-icon" id="btn-preset-rename" disabled title="Rename">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+                </button>
+                <button type="button" class="btn btn-sm btn-ghost btn-icon" id="btn-preset-delete" disabled title="Delete">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                </button>
+                <button type="button" class="btn btn-sm btn-ghost btn-icon" id="btn-preset-export" disabled title="Export to file">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+                </button>
+                <button type="button" class="btn btn-sm btn-ghost btn-icon" id="btn-preset-copy" disabled title="Copy share code">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="preset-save-block">
+              <label class="preset-save-label" for="preset-name">Save current as new</label>
+              <div class="preset-save-row">
+                <input type="text" id="preset-name" class="preset-name" placeholder="Preset name" maxlength="48" />
+                <button type="button" class="btn" id="btn-preset-save">Save</button>
+              </div>
+            </div>
+
+            <div class="preset-import-block">
+              <button type="button" class="btn btn-block btn-ghost" id="btn-preset-import">Import file</button>
+              <label class="preset-save-label" for="preset-code-input">Or paste a share code</label>
+              <textarea id="preset-code-input" class="preset-code-input" rows="4" placeholder="VELO1...." spellcheck="false"></textarea>
+              <button type="button" class="btn btn-block" id="btn-preset-import-code">Import code</button>
+              <p class="note preset-path-note">Folder: <span class="mono">%APPDATA%\Velo\presets\</span></p>
+            </div>
+          </section>
+
+          <section class="block sec" data-section="size" hidden>
+            <h2>Size <span class="sub">OBS source</span></h2>
+            <div class="field">
+              <label>Aspect</label>
+              <select data-key="canvas_aspect" id="aspect">
+                <option value="16:9">16:9 (monitor)</option>
+                <option value="1:1">1:1 (square)</option>
+                <option value="4:3">4:3</option>
+                <option value="21:9">21:9</option>
+                <option value="custom">Custom</option>
+              </select>
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h"><span>Width</span><input type="number" class="val-input" data-link="canvas_width" /></div>
+              <input type="range" data-key="canvas_width" min="160" max="1920" step="1" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h"><span>Height</span><input type="number" class="val-input" data-link="canvas_height" /></div>
+              <input type="range" data-key="canvas_height" min="90" max="1080" step="1" />
+            </div>
+            <label class="inline-check unclamp-row" title="Allow values outside the slider range">
+              <input type="checkbox" id="unclamp" data-key="ui_unclamp_sliders" /> Unclamp sliders
+            </label>
+            <p class="note">Match these to the OBS Browser Source size.</p>
+          </section>
+
+          <section class="block sec" data-section="background" hidden>
+            <h2>Background</h2>
+            <div class="checks">
+              <label><input type="checkbox" data-key="pad_bg_enabled" /> Fill</label>
+              <label><input type="checkbox" data-key="pad_border_enabled" /> Border</label>
+              <label><input type="checkbox" data-key="pad_grid" /> Grid</label>
+              <label><input type="checkbox" data-key="pad_vignette" /> Vignette</label>
+              <label><input type="checkbox" data-key="pad_shadow" /> Shadow</label>
+            </div>
+            <div class="field">
+              <label>Shape</label>
+              <select data-key="pad_shape">
+                <option value="rounded">Rounded</option>
+                <option value="rect">Rectangle</option>
+                <option value="pill">Pill</option>
+                <option value="circle">Circle</option>
+              </select>
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h"><span>Corner radius</span><input type="number" class="val-input" data-link="pad_radius" step="1" /></div>
+              <input type="range" data-key="pad_radius" min="0" max="80" step="1" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h"><span>Fill opacity</span><input type="number" class="val-input" data-link="pad_bg_opacity" step="0.01" /></div>
+              <input type="range" data-key="pad_bg_opacity" min="0" max="1" step="0.01" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h"><span>Border thickness</span><input type="number" class="val-input" data-link="pad_border_width" step="0.5" /></div>
+              <input type="range" data-key="pad_border_width" min="0.5" max="16" step="0.5" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h"><span>Border opacity</span><input type="number" class="val-input" data-link="pad_border_opacity" step="0.01" /></div>
+              <input type="range" data-key="pad_border_opacity" min="0" max="1" step="0.01" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h"><span>Grid size</span><input type="number" class="val-input" data-link="pad_grid_size" step="1" /></div>
+              <input type="range" data-key="pad_grid_size" min="8" max="120" step="1" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h"><span>Grid thickness</span><input type="number" class="val-input" data-link="pad_grid_thickness" step="0.5" /></div>
+              <input type="range" data-key="pad_grid_thickness" min="0.5" max="8" step="0.5" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h"><span>Grid opacity</span><input type="number" class="val-input" data-link="pad_grid_opacity" step="0.01" /></div>
+              <input type="range" data-key="pad_grid_opacity" min="0" max="0.5" step="0.01" />
+            </div>
+            <div class="row2">
+              <div class="field">
+                <label>Fill color</label>
+                <input type="color" data-key="pad_bg_color" data-color />
+              </div>
+              <div class="field">
+                <label>Border color</label>
+                <input type="color" data-key="pad_border_color" data-color />
+              </div>
+            </div>
+            <div class="field">
+              <label>Grid color</label>
+              <input type="color" data-key="pad_grid_color" data-color />
+            </div>
+          </section>
+
+          <section class="block sec" data-section="motion" hidden>
+            <h2>Motion</h2>
+            <div class="field">
+              <label>
+                Feel
+                <span class="info" tabindex="0" data-tip="Quick presets for how fast and smooth movement looks on the pad.">i</span>
+              </label>
+              <div class="feel-pills" id="feel-pills" role="group" aria-label="Motion feel">
+                <button type="button" class="feel-pill" data-feel="tight">Tight</button>
+                <button type="button" class="feel-pill" data-feel="normal">Normal</button>
+                <button type="button" class="feel-pill" data-feel="soft">Soft</button>
+              </div>
+              <p class="feel-hint" id="feel-hint">Normal</p>
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <span>On-screen scale <span class="info" tabindex="0" data-tip="How far the trail moves on the pad for a given flick. Lower = calmer look. Overlay only.">i</span></span>
+                <input type="number" class="val-input" data-link="motion_scale" step="0.05" />
+              </div>
+              <input type="range" data-key="motion_scale" min="0.1" max="2" step="0.05" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <span>Motion ease <span class="info" tabindex="0" data-tip="How gently the cursor catches up. Higher values make flicks draw out instead of snapping.">i</span></span>
+                <input type="number" class="val-input" data-link="motion_ease" step="0.01" />
+              </div>
+              <input type="range" data-key="motion_ease" min="0" max="0.9" step="0.01" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <span>Camera lag <span class="info" tabindex="0" data-tip="In infinite pan mode, how slowly the pad follows the cursor. 0 = locked on.">i</span></span>
+                <input type="number" class="val-input" data-link="camera_lag" step="0.01" />
+              </div>
+              <input type="range" data-key="camera_lag" min="0" max="0.9" step="0.01" />
+            </div>
+            <div class="field">
+              <label>
+                View
+                <span class="info" tabindex="0" data-tip="Infinite pan: keep moving any direction, the pad scrolls with you. Fixed: classic pad bounds.">i</span>
+              </label>
+              <select data-key="view_mode">
+                <option value="infinite">Infinite pan</option>
+                <option value="fixed">Fixed pad</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>
+                Capture
+                <span class="info" tabindex="0" data-tip="Relative: best for games and aim trainers. Absolute: desktop cursor position.">i</span>
+              </label>
+              <select data-key="capture_mode">
+                <option value="relative">Relative (game / aim)</option>
+                <option value="absolute">Absolute (desktop)</option>
+              </select>
+            </div>
+            <label class="inline-check"><input type="checkbox" data-key="invert_y" /> Invert Y</label>
+          </section>
+
+          <section class="block sec" data-section="trail" hidden>
+            <h2>Trail</h2>
+            <div class="checks">
+              <label><input type="checkbox" data-key="trail_enabled" /> Enabled</label>
+              <label><input type="checkbox" data-key="trail_glow" /> Glow</label>
+              <label><input type="checkbox" data-key="speed_colorize" /> Speed colors</label>
+            </div>
+            <div class="field" id="trail-solid-color">
+              <label>Trail color</label>
+              <input type="color" data-key="trail_color" data-color />
+            </div>
+            <div id="trail-speed-colors" hidden>
+              <h3 class="subhead">Speed gradient</h3>
+              <div class="row2">
+                <div class="field">
+                  <label>Slow</label>
+                  <input type="color" id="speed-stop-0" data-color />
+                </div>
+                <div class="field">
+                  <label>Mid</label>
+                  <input type="color" id="speed-stop-1" data-color />
+                </div>
+              </div>
+              <div class="row2">
+                <div class="field">
+                  <label>Fast</label>
+                  <input type="color" id="speed-stop-2" data-color />
+                </div>
+                <div class="field">
+                  <label>Peak</label>
+                  <input type="color" id="speed-stop-3" data-color />
+                </div>
+              </div>
+              <div class="slider" data-slider>
+                <div class="slider-h">
+                  <span>Speed max</span>
+                  <input type="number" class="val-input" data-link="speed_max" step="50" />
+                </div>
+                <input type="range" data-key="speed_max" min="200" max="15000" step="50" />
+              </div>
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <span>Lifetime ms <span class="info" tabindex="0" data-tip="How long trail points stay visible before fading out.">i</span></span>
+                <input type="number" class="val-input" data-link="trail_lifetime_ms" step="10" />
+              </div>
+              <input type="range" data-key="trail_lifetime_ms" min="100" max="3000" step="10" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <span>Width</span>
+                <input type="number" class="val-input" data-link="trail_width" step="0.1" />
+              </div>
+              <input type="range" data-key="trail_width" min="0.5" max="16" step="0.1" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <span>Curve <span class="info" tabindex="0" data-tip="0 = straight segments. 1 = fully curved path between points.">i</span></span>
+                <input type="number" class="val-input" data-link="trail_curve" step="0.01" />
+              </div>
+              <input type="range" data-key="trail_curve" min="0" max="1" step="0.01" />
+            </div>
+          </section>
+
+          <section class="block sec" data-section="cursor" hidden>
+            <h2>Cursor</h2>
+            <div class="checks">
+              <label><input type="checkbox" data-key="show_cursor_dot" /> Show cursor</label>
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <span>Size</span>
+                <input type="number" class="val-input" data-link="cursor_dot_size" step="0.5" />
+              </div>
+              <input type="range" data-key="cursor_dot_size" min="1" max="20" step="0.5" />
+            </div>
+            <div class="field">
+              <label>Color</label>
+              <input type="color" data-key="cursor_dot_color" data-color />
+            </div>
+
+            <h3 class="subhead">Clicks</h3>
+            <div class="checks">
+              <label><input type="checkbox" data-key="show_clicks" /> Show clicks</label>
+              <label><input type="checkbox" data-key="click_expand" /> Expand out</label>
+            </div>
+            <div class="field">
+              <label>
+                Style
+                <span class="info" tabindex="0" data-tip="How click ripples are drawn.">i</span>
+              </label>
+              <select data-key="click_style">
+                <option value="ring">Ring</option>
+                <option value="fill">Filled circle</option>
+                <option value="double">Double ring</option>
+                <option value="cross">Cross</option>
+              </select>
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <span>Lifetime ms <span class="info" tabindex="0" data-tip="How long a click effect stays on screen.">i</span></span>
+                <input type="number" class="val-input" data-link="click_lifetime_ms" step="10" />
+              </div>
+              <input type="range" data-key="click_lifetime_ms" min="80" max="1200" step="10" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <span>Radius <span class="info" tabindex="0" data-tip="Max size of the click ripple.">i</span></span>
+                <input type="number" class="val-input" data-link="click_radius" step="1" />
+              </div>
+              <input type="range" data-key="click_radius" min="4" max="64" step="1" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <span>Line width</span>
+                <input type="number" class="val-input" data-link="click_line_width" step="0.25" />
+              </div>
+              <input type="range" data-key="click_line_width" min="0.5" max="6" step="0.25" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <span>Opacity</span>
+                <input type="number" class="val-input" data-link="click_opacity" step="0.01" />
+              </div>
+              <input type="range" data-key="click_opacity" min="0.1" max="1" step="0.01" />
+            </div>
+            <div class="row2">
+              <div class="field">
+                <label>Left click</label>
+                <input type="color" id="click-color-left" data-color />
+              </div>
+              <div class="field">
+                <label>Right click</label>
+                <input type="color" id="click-color-right" data-color />
+              </div>
+            </div>
+            <div class="row2">
+              <div class="field">
+                <label>Middle</label>
+                <input type="color" id="click-color-middle" data-color />
+              </div>
+              <div class="field">
+                <label>Side buttons</label>
+                <input type="color" id="click-color-side" data-color />
+              </div>
+            </div>
+          </section>
+
+          <section class="block sec" data-section="hud" hidden>
+            <h2>HUD</h2>
+            <div class="checks">
+              <label><input type="checkbox" data-key="show_stats" /> Show HUD</label>
+              <label><input type="checkbox" data-key="stats_bg" /> Background</label>
+              <label><input type="checkbox" data-key="stats_border" /> Border</label>
+            </div>
+            <h3 class="subhead">Metrics</h3>
+            <div class="checks">
+              <label><input type="checkbox" data-key="stats_show_speed" /> Speed</label>
+              <label><input type="checkbox" data-key="stats_show_peak" /> Peak speed</label>
+              <label><input type="checkbox" data-key="stats_show_distance" /> Distance</label>
+              <label><input type="checkbox" data-key="stats_show_clicks" /> Click count</label>
+              <label><input type="checkbox" data-key="stats_show_cps" /> CPS</label>
+            </div>
+            <div class="field">
+              <label>Units</label>
+              <select data-key="stats_units">
+                <option value="cm">Centimeters (cm, cm/s)</option>
+                <option value="m">Meters (m, m/s)</option>
+                <option value="raw">Raw counts</option>
+              </select>
+            </div>
+            <h3 class="subhead">Position</h3>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <span>X %</span>
+                <input type="number" class="val-input" data-link="stats_x_pct" step="0.5" />
+              </div>
+              <input type="range" data-key="stats_x_pct" min="0" max="100" step="0.5" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <span>Y %</span>
+                <input type="number" class="val-input" data-link="stats_y_pct" step="0.5" />
+              </div>
+              <input type="range" data-key="stats_y_pct" min="0" max="100" step="0.5" />
+            </div>
+            <div class="row2 hud-corners">
+              <button type="button" class="btn btn-sm btn-ghost" data-hud-corner="tl">Top left</button>
+              <button type="button" class="btn btn-sm btn-ghost" data-hud-corner="tr">Top right</button>
+              <button type="button" class="btn btn-sm btn-ghost" data-hud-corner="bl">Bottom left</button>
+              <button type="button" class="btn btn-sm btn-ghost" data-hud-corner="br">Bottom right</button>
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <span>Opacity</span>
+                <input type="number" class="val-input" data-link="stats_opacity" step="0.01" />
+              </div>
+              <input type="range" data-key="stats_opacity" min="0.15" max="1" step="0.01" />
+            </div>
+            <button type="button" class="btn btn-block btn-ghost" id="btn-stats-reset">Reset session stats</button>
+          </section>
+
+          <section class="block sec" data-section="performance" hidden>
+            <h2>Performance</h2>
+            <div class="field">
+              <label>
+                Quality
+                <span class="info" tabindex="0" data-tip="Bundles trail cost settings. Performance is cheapest, Pretty is heaviest.">i</span>
+              </label>
+              <select data-key="render_quality" id="render-quality">
+                <option value="performance">Performance</option>
+                <option value="balanced">Balanced</option>
+                <option value="pretty">Pretty</option>
+              </select>
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <span>Target FPS <span class="info" tabindex="0" data-tip="Max draw rate for the overlay. 60 is usually enough. 0 = no cap (can waste CPU).">i</span></span>
+                <input type="number" class="val-input" data-link="target_fps" step="1" />
+              </div>
+              <input type="range" data-key="target_fps" min="0" max="144" step="1" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <span>Send rate (Hz) <span class="info" tabindex="0" data-tip="How often mouse moves are sent over the network. Higher = smoother trail, more CPU.">i</span></span>
+                <input type="number" class="val-input" data-link="ws_send_hz" step="1" />
+              </div>
+              <input type="range" data-key="ws_send_hz" min="30" max="240" step="1" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <span>Max trail points <span class="info" tabindex="0" data-tip="Cap on stored trail samples. Lower = less work, shorter-looking trails.">i</span></span>
+                <input type="number" class="val-input" data-link="trail_max_points" step="1" />
+              </div>
+              <input type="range" data-key="trail_max_points" min="20" max="400" step="1" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <span>Curve samples <span class="info" tabindex="0" data-tip="Subdivisions per trail segment when curve is on. Higher = smoother curves, more draw cost.">i</span></span>
+                <input type="number" class="val-input" data-link="trail_samples" step="1" />
+              </div>
+              <input type="range" data-key="trail_samples" min="1" max="8" step="1" />
+            </div>
+          </section>
+
+
+          <section class="block sec" data-section="obs" hidden>
+            <h2>OBS</h2>
+            <div class="setup-card" id="obs-setup-card">
+              <div class="setup-card-h">
+                <strong id="obs-setup-title">Browser source</strong>
+                <span class="setup-badge" id="obs-setup-badge">Setup</span>
+              </div>
+              <ol class="steps setup-steps">
+                <li>Add a <strong>Browser</strong> source</li>
+                <li>Paste the URL</li>
+                <li>Size: <strong id="size-label-2">640 × 360</strong></li>
+                <li>Turn off "Shutdown when not visible"</li>
+              </ol>
+              <button type="button" class="btn btn-block" id="btn-copy">Copy URL</button>
+              <button type="button" class="btn btn-block btn-ghost" id="btn-copy-size">Copy size</button>
+              <button type="button" class="btn btn-block btn-ghost" id="btn-setup-done" hidden>Done</button>
+            </div>
+            <div class="url mono" id="obs-url">-</div>
+            <p class="note" id="obs-size-line">Browser size: 640 x 360</p>
+            <div class="field">
+              <label>Auth token</label>
+              <input type="text" data-key="auth_token" data-text class="mono" />
+            </div>
+            <div class="field">
+              <label>Host</label>
+              <input type="text" data-key="host" data-text />
+            </div>
+            <div class="field">
+              <label>Port</label>
+              <input type="number" data-key="port" data-num />
+            </div>
+            <button type="button" class="btn btn-block" id="btn-restart">Restart server</button>
+          </section>
+
+          <section class="block sec" data-section="settings" hidden>
+            <h2>Settings</h2>
+            <h3 class="subhead">Startup</h3>
+            <div class="checks checks-one-col">
+              <label><input type="checkbox" data-key="start_with_windows" id="chk-autostart" /> Autostart</label>
+              <label class="startup-min-label" id="label-minimized"><input type="checkbox" data-key="start_minimized" id="chk-minimized" /> Minimized</label>
+            </div>
+            <h3 class="subhead">Mouse</h3>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <span>DPI</span>
+                <input type="number" class="val-input" data-link="stats_dpi" step="50" />
+              </div>
+              <input type="range" data-key="stats_dpi" min="100" max="32000" step="50" />
+            </div>
+            <p class="note">DPI for HUD distance and speed</p>
+
+            <h3 class="subhead">Hotkey</h3>
+            <div class="field">
+              <label>Reset HUD stats</label>
+              <div class="hotkey-row">
+                <button type="button" class="btn btn-block btn-ghost" id="btn-hotkey-bind">Click to bind</button>
+                <button type="button" class="btn btn-sm btn-ghost" id="btn-hotkey-clear" title="Clear hotkey">Clear</button>
+              </div>
+              <p class="note" id="hotkey-hint">Global - works with game focused</p>
+            </div>
+
+            <h3 class="subhead">Backup</h3>
+            <p class="note">Config folder: <span class="mono">%APPDATA%\Velo</span></p>
+            <button type="button" class="btn btn-block" id="btn-export">Export settings</button>
+            <button type="button" class="btn btn-block btn-ghost" id="btn-import">Import settings</button>
+
+            <h3 class="subhead">Reset</h3>
+            <button type="button" class="btn btn-block btn-ghost" id="btn-reset-visuals">Reset look only</button>
+            <button type="button" class="btn btn-block btn-ghost" id="btn-reset">Reset all defaults</button>
+          </section>
+        </div>
+        <footer class="foot">
+          <span id="status">-</span>
+        </footer>
+        </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+  <div class="toast" id="toast" hidden></div>
+  <div class="modal-root" id="modal-root" hidden>
+    <div class="modal-backdrop" id="modal-backdrop"></div>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <h3 class="modal-title" id="modal-title">Confirm</h3>
+      <p class="modal-message" id="modal-message"></p>
+      <div class="modal-input-wrap" id="modal-input-wrap" hidden>
+        <textarea id="modal-input" class="modal-input" rows="3" maxlength="20000"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="modal-cancel">Cancel</button>
+        <button type="button" class="btn btn-ghost" id="modal-secondary" hidden>Other</button>
+        <button type="button" class="btn" id="modal-confirm">OK</button>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/ui/app.js"></script>
+</body>
+</html>

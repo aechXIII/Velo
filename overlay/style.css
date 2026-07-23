@@ -1,0 +1,309 @@
+/* Velo overlay (OBS browser source) */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  font-family: "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif;
+  color: #e8eaef;
+  user-select: none;
+}
+
+.source-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Pad */
+.pad {
+  position: fixed;
+  z-index: 1;
+  left: 50%;
+  top: 50%;
+  width: 42%;
+  height: 48%;
+  transform: translate(-50%, -50%);
+  overflow: hidden;
+  pointer-events: none;
+  isolation: isolate;
+}
+
+.pad-bg {
+  position: absolute;
+  inset: 0;
+  background: rgba(12, 14, 20, 0.62);
+  border: none;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.1);
+  transition: background 0.2s ease, box-shadow 0.2s ease, border-radius 0.2s ease;
+}
+
+.pad.shape-rect .pad-bg,
+.pad.shape-rect .pad-grid,
+.pad.shape-rect .pad-vignette,
+.pad.shape-rect #trail {
+  border-radius: 0;
+}
+
+.pad.shape-rounded .pad-bg,
+.pad.shape-rounded .pad-grid,
+.pad.shape-rounded .pad-vignette {
+  border-radius: var(--pad-radius, 18px);
+}
+
+.pad.shape-pill .pad-bg,
+.pad.shape-pill .pad-grid,
+.pad.shape-pill .pad-vignette {
+  border-radius: 999px;
+}
+
+.pad.shape-circle .pad-bg,
+.pad.shape-circle .pad-grid,
+.pad.shape-circle .pad-vignette,
+.pad.shape-circle {
+  border-radius: 50%;
+}
+
+.pad.shape-stadium .pad-bg,
+.pad.shape-stadium .pad-grid,
+.pad.shape-stadium .pad-vignette {
+  border-radius: 40% / 50%;
+}
+
+.pad.no-bg .pad-bg {
+  background: transparent !important;
+}
+
+.pad.frost .pad-bg {
+  backdrop-filter: blur(14px) saturate(1.1);
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+}
+
+.pad-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
+  contain: strict;
+}
+
+.pad-grid-pat {
+  position: absolute;
+  left: -50%;
+  top: -50%;
+  width: 200%;
+  height: 200%;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, currentColor 1px, transparent 1px),
+    linear-gradient(to bottom, currentColor 1px, transparent 1px);
+  background-size: 40px 40px;
+  color: #fff;
+  opacity: 0.08;
+  will-change: transform;
+  backface-visibility: hidden;
+  transform: translate3d(0, 0, 0);
+}
+
+.pad-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 42%,
+    rgba(0, 0, 0, 0.35) 100%
+  );
+}
+
+.pad-crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0.12;
+}
+
+.pad-crosshair .ch-h,
+.pad-crosshair .ch-v {
+  position: absolute;
+  background: #fff;
+  border-radius: 1px;
+}
+
+.pad-crosshair .ch-h {
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.pad-crosshair .ch-v {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+}
+
+#trail {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.stats {
+  position: fixed;
+  z-index: 10;
+  left: 0;
+  top: 0;
+  min-width: 112px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(10, 11, 15, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.stats.hidden {
+  display: none;
+}
+
+.stats.no-bg {
+  background: transparent !important;
+  background-color: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.stats.no-border {
+  border: none !important;
+  border-width: 0 !important;
+  box-shadow: none !important;
+}
+
+.stats.bare {
+  min-width: 0 !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: 3.6em 5.2em 2.8em;
+  align-items: baseline;
+  column-gap: 8px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.stats-row[hidden] {
+  display: none;
+}
+
+.stats-name {
+  color: rgba(232, 234, 239, 0.72);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.stats-value {
+  font-weight: 700;
+  font-size: 13px;
+  color: #ffffff;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.stats-unit {
+  color: rgba(232, 234, 239, 0.68);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: left;
+  min-width: 2.8em;
+}
+
+.stats.no-bg .stats-name,
+.stats.no-bg .stats-unit,
+.stats.no-bg .stats-value {
+  -webkit-text-stroke: 0.35px rgba(0, 0, 0, 0.55);
+  paint-order: stroke fill;
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 1),
+    0 1px 2px rgba(0, 0, 0, 1),
+    0 0 6px rgba(0, 0, 0, 0.95),
+    0 0 12px rgba(0, 0, 0, 0.75),
+    1px 1px 0 rgba(0, 0, 0, 0.9),
+    -1px -1px 0 rgba(0, 0, 0, 0.55),
+    1px -1px 0 rgba(0, 0, 0, 0.55),
+    -1px 1px 0 rgba(0, 0, 0, 0.55);
+}
+
+.stats.no-bg .stats-name,
+.stats.no-bg .stats-unit {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.stats.no-bg .stats-value {
+  color: #ffffff;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+
+.status {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  background: rgba(10, 11, 15, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(242, 244, 248, 0.92);
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+.status.ok {
+  opacity: 0;
+}
+
+.status.err {
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.35);
+  opacity: 1;
+}

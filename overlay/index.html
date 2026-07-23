@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Velo Overlay</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div id="source-bg" class="source-bg" hidden></div>
+  <div id="pad" class="pad">
+    <div id="pad-bg" class="pad-bg"></div>
+    <div id="pad-grid" class="pad-grid" hidden>
+      <div id="pad-grid-pat" class="pad-grid-pat" aria-hidden="true"></div>
+    </div>
+    <div id="pad-vignette" class="pad-vignette" hidden></div>
+    <div id="pad-crosshair" class="pad-crosshair" hidden>
+      <span class="ch-h"></span><span class="ch-v"></span>
+    </div>
+    <canvas id="trail" aria-hidden="true"></canvas>
+  </div>
+  <div id="stats" class="stats hidden">
+    <div class="stats-row" data-stat="speed" hidden>
+      <span class="stats-name">SPD</span>
+      <b class="stats-value" id="s-speed">0</b>
+      <span class="stats-unit" id="s-speed-unit"></span>
+    </div>
+    <div class="stats-row" data-stat="peak" hidden>
+      <span class="stats-name">PEAK</span>
+      <b class="stats-value" id="s-peak">0</b>
+      <span class="stats-unit" id="s-peak-unit"></span>
+    </div>
+    <div class="stats-row" data-stat="distance" hidden>
+      <span class="stats-name">DIST</span>
+      <b class="stats-value" id="s-dist">0</b>
+      <span class="stats-unit" id="s-dist-unit"></span>
+    </div>
+    <div class="stats-row" data-stat="clicks" hidden>
+      <span class="stats-name">CLICKS</span>
+      <b class="stats-value" id="s-clicks">0</b>
+      <span class="stats-unit"></span>
+    </div>
+    <div class="stats-row" data-stat="cps" hidden>
+      <span class="stats-name">CPS</span>
+      <b class="stats-value" id="s-cps">0</b>
+      <span class="stats-unit"></span>
+    </div>
+  </div>
+  <div id="status" class="status">Connecting</div>
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

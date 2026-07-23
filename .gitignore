@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+installer/Output/
+.idea/
+.vscode/
+*.log
+.DS_Store
+Thumbs.db
+*.tmp

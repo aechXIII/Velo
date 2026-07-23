@@ -1,0 +1,38 @@
+name: Build
+
+# Smoke-build the Windows EXE on every push/PR (no release upload)
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python.exe -m pip install --upgrade pip
+          .venv\Scripts\python.exe -m pip install -r requirements.txt
+          .venv\Scripts\python.exe -m pip install pyinstaller
+
+      - name: Build EXE
+        run: .\scripts\build.ps1 -Clean
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Velo-exe
+          path: dist/Velo.exe
+          if-no-files-found: error

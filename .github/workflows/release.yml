@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python.exe -m pip install --upgrade pip
+          .venv\Scripts\python.exe -m pip install -r requirements.txt
+          .venv\Scripts\python.exe -m pip install pyinstaller
+
+      - name: Install Inno Setup 6
+        run: choco install innosetup --no-progress -y
+
+      - name: Build EXE + installer
+        run: .\scripts\build.ps1 -Clean -Installer
+
+      - name: Extract changelog section
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          if (-not (Test-Path "CHANGELOG.md")) {
+            "Velo $version" | Set-Content release-notes.md -Encoding UTF8
+            exit 0
+          }
+          $content  = Get-Content CHANGELOG.md -Raw
+          $pattern  = "(?s)## \[$([regex]::Escape($version))\].*?(?=\r?\n## \[|\z)"
+          $match    = [regex]::Match($content, $pattern)
+          if ($match.Success) {
+            $match.Value.Trim() | Set-Content release-notes.md -Encoding UTF8
+          } else {
+            "Velo $version" | Set-Content release-notes.md -Encoding UTF8
+          }
+
+      - name: Upload release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Velo.exe
+            installer/Output/Velo-Setup-*.exe
+          body_path: release-notes.md

@@ -1,0 +1,11 @@
+[project]
+name = "velo"
+version = "1.0.0"
+description = "Mouse Input overlay for OBS. Made for aim trainers and FPS games."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["velo*"]

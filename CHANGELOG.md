@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.0.3] - 2026-07-23
+
+- Prevent a second Velo instance; open Settings on the already running app
+
 ## [1.0.2] - 2026-07-23
 
 - Remove Unclamp sliders option from Size settings

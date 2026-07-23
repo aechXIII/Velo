@@ -19,6 +19,7 @@ from velo.file_dialogs import open_json_dialog, save_json_dialog
 
 RestartCallback = Callable[[], None]
 StatsResetCallback = Callable[[], ConfigMap]
+ShowSettingsCallback = Callable[[], None]
 JsonDict = Dict[str, Any]
 
 
@@ -55,6 +56,7 @@ class VeloServer:
         self._stop_flag = threading.Event()
         self._restart_callback: Optional[RestartCallback] = None
         self._stats_reset_callback: Optional[StatsResetCallback] = None
+        self._show_settings_callback: Optional[ShowSettingsCallback] = None
         self._pending_move_msg: Optional[str] = None
         self._pending_msgs: List[str] = []
         self._flush_scheduled = False
@@ -67,6 +69,9 @@ class VeloServer:
 
     def set_stats_reset_callback(self, cb: StatsResetCallback) -> None:
         self._stats_reset_callback = cb
+
+    def set_show_settings_callback(self, cb: ShowSettingsCallback) -> None:
+        self._show_settings_callback = cb
 
     @property
     def running(self) -> bool:
@@ -272,6 +277,7 @@ class VeloServer:
         app.router.add_post("/api/presets/import-share", self._handle_api_presets_import_share)
         app.router.add_post("/api/server/restart", self._handle_api_restart)
         app.router.add_post("/api/stats/reset", self._handle_api_stats_reset)
+        app.router.add_post("/api/app/show", self._handle_api_app_show)
         app.router.add_get("/api/health", self._handle_health)
         app.router.add_get("/api/status", self._handle_status)
         app.router.add_get("/ws", self._handle_ws)
@@ -660,6 +666,18 @@ class VeloServer:
         except (RuntimeError, ValueError, OSError) as exc:
             return web.json_response({"ok": False, "error": str(exc)}, status=500)
         return web.json_response({"ok": True, "data": data})
+
+    async def _handle_api_app_show(self, request: web.Request) -> web.Response:
+        denied = await self._require_auth(request)
+        if denied:
+            return denied
+        if not self._show_settings_callback:
+            return web.json_response({"ok": False, "error": "no show handler"}, status=500)
+        try:
+            self._show_settings_callback()
+        except (RuntimeError, OSError, AttributeError) as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=500)
+        return web.json_response({"ok": True})
 
     async def _handle_health(self, request: web.Request) -> web.Response:
         return web.json_response(

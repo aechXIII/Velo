@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 APP_NAME = "Velo"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 PRESET_CLIP_PREFIX = "VELO1."
 
 PRESET_EXCLUDE = frozenset(

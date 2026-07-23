@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 
 from velo import __version__
 from velo import autostart
+from velo import single_instance
 from velo.config import APP_NAME, ConfigStore
 from velo.hotkeys import GlobalHotkeys
 from velo.mouse_capture import MouseCapture
@@ -72,6 +73,7 @@ class VeloApp:
         self.pipeline = EventPipeline(self.config, self.capture, self.server)
         self.server.set_restart_callback(self.restart_server)
         self.server.set_stats_reset_callback(self.pipeline.reset_stats)
+        self.server.set_show_settings_callback(self._request_show_settings)
         self.hotkeys = GlobalHotkeys()
 
         self._cmd: queue.Queue = queue.Queue()
@@ -83,7 +85,7 @@ class VeloApp:
         self._autostart_enabled: Optional[bool] = None
 
         self.tray = TrayApp(
-            on_open_settings=lambda: self._cmd.put("settings"),
+            on_open_settings=self._request_show_settings,
             on_copy_url=self._copy_url,
             on_copy_size=self._copy_size,
             on_preview_off=self._preview_off,
@@ -181,6 +183,24 @@ class VeloApp:
                 break
             if cmd == "settings":
                 self._open_settings_blocking()
+
+    def _request_show_settings(self) -> None:
+        if self._stopping:
+            return
+        win = self._window
+        if win is not None:
+            try:
+                if hasattr(win, "restore"):
+                    win.restore()
+                if hasattr(win, "show"):
+                    win.show()
+                return
+            except (OSError, RuntimeError, AttributeError):
+                pass
+        try:
+            self._cmd.put_nowait("settings")
+        except queue.Full:
+            self._cmd.put("settings")
 
     def _open_settings_blocking(self) -> None:
         try:
@@ -335,6 +355,7 @@ class VeloApp:
         self.server = VeloServer(self.config)
         self.server.set_restart_callback(self.restart_server)
         self.server.set_stats_reset_callback(self.pipeline.reset_stats)
+        self.server.set_show_settings_callback(self._request_show_settings)
         self.pipeline.server = self.server
         self.server.start()
         self._refresh_runtime_status()
@@ -410,6 +431,24 @@ def main() -> None:
         print(dep_err, file=sys.stderr)
         _win_message("Velo - setup needed", dep_err, error=True)
         raise SystemExit(1)
+
+    if not single_instance.try_acquire():
+        try:
+            cfg = ConfigStore()
+            handed_off = single_instance.request_show_settings(cfg)
+        except Exception as exc:
+            handed_off = False
+            print(f"[Velo] Could not contact running instance: {exc}", file=sys.stderr)
+        if handed_off:
+            print("[Velo] Already running — opened Settings in the existing instance")
+        else:
+            print("[Velo] Already running", file=sys.stderr)
+            _win_message(
+                "Velo",
+                "Velo is already running.\n\nUse the tray icon to open Settings.",
+            )
+        raise SystemExit(0)
+
     try:
         app = VeloApp()
         app.run()

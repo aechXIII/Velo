@@ -3,9 +3,9 @@ name: Build
 # Smoke-build the Windows EXE on every push/PR (no release upload)
 on:
   push:
-    branches: [master, main]
+    branches: [main]
   pull_request:
-    branches: [master, main]
+    branches: [main]
 
 jobs:
   build:

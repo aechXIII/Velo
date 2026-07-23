@@ -4,7 +4,7 @@
 ; Or:     .\scripts\build.ps1 -Clean -Installer
 
 #define AppName      "Velo"
-#define AppVersion   "1.0.0"
+#define AppVersion   "1.0.1"
 #define AppPublisher "aech"
 #define AppURL       "https://github.com/aechXIII/Velo"
 #define AppExeName   "Velo.exe"

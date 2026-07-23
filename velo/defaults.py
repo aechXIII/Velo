@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 APP_NAME = "Velo"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 PRESET_CLIP_PREFIX = "VELO1."
 
 PRESET_EXCLUDE = frozenset(
@@ -25,6 +25,7 @@ PRESET_EXCLUDE = frozenset(
         "active_preset_kind",
         "stats_reset_hotkey",
         "stats_dpi",
+        "stats_update_rate",
     }
 )
 
@@ -43,8 +44,15 @@ SHELL_KEYS = frozenset(
         "start_with_windows",
         "stats_reset_hotkey",
         "stats_dpi",
+        "stats_update_rate",
     }
 )
+
+STATS_UPDATE_HZ = {
+    "slow": 2.0,
+    "normal": 4.0,
+    "fast": 10.0,
+}
 
 FEEL_PRESETS: Dict[str, Dict[str, Any]] = {
     "tight": {
@@ -323,6 +331,7 @@ DEFAULTS: Dict[str, Any] = {
     "stats_show_distance": True,
     "stats_units": "cm",
     "stats_dpi": 800,
+    "stats_update_rate": "normal",
     "stats_reset_hotkey": "",
     "start_minimized": False,
     "open_settings_on_start": True,

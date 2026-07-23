@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.0.1] - 2026-07-23
+
+- HUD update rate: Slow / Normal / Fast (2 / 4 / 10 per second)
+
 ## [1.0.0] - 2026-07-23
 
 First public release.

@@ -9,6 +9,7 @@ import time
 from typing import Any, Dict, Optional
 
 from velo.config import ConfigStore
+from velo.defaults import STATS_UPDATE_HZ
 from velo.mouse_capture import MouseCapture, MouseEvent
 from velo.server import VeloServer
 
@@ -48,6 +49,7 @@ class EventPipeline:
         self._acc_buttons = 0
         self._has_pending_move = False
         self._min_move_interval = 1.0 / 120.0
+        self._stats_interval = 0.25
 
     def start(self) -> None:
         self.capture.add_listener(self._enqueue_mouse)
@@ -90,6 +92,11 @@ class EventPipeline:
             hz = min(hz, max(fps * 2.0, 60.0))
         hz = max(30.0, min(hz, 240.0))
         self._min_move_interval = 1.0 / hz
+
+        rate = str(snap.get("stats_update_rate") or "normal").strip().lower()
+        stats_hz = float(STATS_UPDATE_HZ.get(rate, STATS_UPDATE_HZ["normal"]))
+        stats_hz = max(1.0, min(stats_hz, 30.0))
+        self._stats_interval = 1.0 / stats_hz
 
     def stats_snapshot(self) -> Dict[str, Any]:
         with self._lock:
@@ -231,7 +238,10 @@ class EventPipeline:
             self._stop.wait(self._min_move_interval)
 
     def _stats_loop(self) -> None:
-        while not self._stop.wait(0.25):
+        while not self._stop.is_set():
+            interval = max(0.03, float(self._stats_interval or 0.25))
+            if self._stop.wait(interval):
+                break
             with self._lock:
                 if self._last_t is not None and (time.perf_counter() - self._last_t) > 0.12:
                     self._stats["speed"] *= 0.5

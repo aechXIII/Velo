@@ -1,6 +1,6 @@
 [project]
 name = "velo"
-version = "1.0.0"
+version = "1.0.1"
 description = "Mouse Input overlay for OBS. Made for aim trainers and FPS games."
 readme = "README.md"
 requires-python = ">=3.9"

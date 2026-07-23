@@ -13,7 +13,6 @@
   let selectedPreset = { name: "", kind: "builtin" };
   let applyTimer = null;
   let suppress = false;
-  let unclamp = false;
   let previewMode = "lite";
   let currentSection = "presets";
   let presetBaseline = null;
@@ -376,42 +375,6 @@
     if (persist) queuePatch({ ui_section: currentSection });
   }
 
-  function setRangeLimits(range) {
-    if (!range || range.type !== "range") return;
-    const key = range.getAttribute("data-key");
-    if (!key) return;
-    const baseMin = parseFloat(range.getAttribute("data-base-min") ?? range.min);
-    const baseMax = parseFloat(range.getAttribute("data-base-max") ?? range.max);
-    if (!range.hasAttribute("data-base-min")) {
-      range.setAttribute("data-base-min", range.min);
-      range.setAttribute("data-base-max", range.max);
-    }
-    if (unclamp) {
-      const v = parseFloat(range.value);
-      let min = baseMin;
-      let max = baseMax;
-      if (Number.isFinite(v)) {
-        if (v < min) min = v;
-        if (v > max) max = v;
-        const span = Math.max(max - min, 1);
-        min = Math.min(min, v - span);
-        max = Math.max(max, v + span);
-      }
-      range.min = String(min);
-      range.max = String(max);
-    } else {
-      range.min = String(baseMin);
-      range.max = String(baseMax);
-      const v = parseFloat(range.value);
-      if (v < baseMin) range.value = String(baseMin);
-      if (v > baseMax) range.value = String(baseMax);
-    }
-  }
-
-  function applyUnclampToAll() {
-    document.querySelectorAll('input[type="range"][data-key]').forEach(setRangeLimits);
-  }
-
   function bindForm() {
     suppress = true;
     document.querySelectorAll("[data-key]").forEach((el) => {
@@ -424,7 +387,6 @@
         if (c.length > 7) c = c.slice(0, 7);
         el.value = c;
       } else if (el.type === "range") {
-        setRangeLimits(el);
         el.value = val;
       } else {
         el.value = val == null ? "" : val;
@@ -632,16 +594,11 @@
       updateSizeLabels();
     }
     if ("host" in patch || "port" in patch || "auth_token" in patch) updateSizeLabels();
-    if ("ui_unclamp_sliders" in patch) {
-      unclamp = !!patch.ui_unclamp_sliders;
-      applyUnclampToAll();
-    }
     suppress = true;
     Object.keys(patch).forEach((key) => {
       document.querySelectorAll(`[data-key="${key}"]`).forEach((el) => {
         if (el.type === "checkbox") el.checked = !!patch[key];
         else if (el.type === "range") {
-          setRangeLimits(el);
           el.value = patch[key];
         } else if (el.type !== "color" || typeof patch[key] === "string") {
           if (el.hasAttribute("data-color") && String(patch[key]).length > 7) {
@@ -720,18 +677,7 @@
     const t = ev.target;
     if (t.classList.contains("val-input") && t.hasAttribute("data-link")) {
       const patch = collect(t);
-      if (patch) {
-        const key = t.getAttribute("data-link");
-        const range = document.querySelector(`input[type="range"][data-key="${key}"]`);
-        if (range && unclamp) {
-          const v = patch[key];
-          if (typeof v === "number") {
-            if (v < parseFloat(range.min)) range.min = String(v);
-            if (v > parseFloat(range.max)) range.max = String(v);
-          }
-        }
-        queuePatch(patch);
-      }
+      if (patch) queuePatch(patch);
       return;
     }
     const el = t.closest("[data-key]");
@@ -1144,9 +1090,6 @@
     if (!res.ok) throw new Error("config");
     cfg = await res.json();
     await refreshPresets();
-    unclamp = !!cfg.ui_unclamp_sliders;
-    const unclampEl = $("unclamp");
-    if (unclampEl) unclampEl.checked = unclamp;
     previewMode = cfg.ui_preview_mode || "lite";
     if (previewModeEl) previewModeEl.value = previewMode;
     selectedPreset = {
@@ -1495,14 +1438,6 @@
     new ResizeObserver(() => layoutPreviewCanvas()).observe(stage);
   }
   window.addEventListener("resize", layoutPreviewCanvas);
-  const unclampEl = $("unclamp");
-  if (unclampEl) {
-    unclampEl.addEventListener("change", (e) => {
-      unclamp = e.target.checked;
-      applyUnclampToAll();
-      bindForm();
-    });
-  }
 
   $("btn-preset-save").addEventListener("click", savePresetAs);
   $("btn-preset-update").addEventListener("click", updateSelectedPreset);

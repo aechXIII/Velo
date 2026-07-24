@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.1.5] - 2026-07-24
+
+- Increase max width and height for Size to 3840x2160
+
 ## [1.1.4] - 2026-07-24
 
 - Simplify Updates settings; check every launch by default (or daily / off)

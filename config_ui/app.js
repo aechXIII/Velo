@@ -1,6 +1,22 @@
   const token = new URLSearchParams(location.search).get("token") || "";
   const authHeaders = token ? { Authorization: "Bearer " + token } : {};
 
+  function blockSideNav(e) {
+    if (e.button === 3 || e.button === 4) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }
+  ["mousedown", "mouseup", "auxclick"].forEach((type) => {
+    window.addEventListener(type, blockSideNav, true);
+  });
+  try {
+    history.pushState(null, "", location.href);
+    window.addEventListener("popstate", () => {
+      history.pushState(null, "", location.href);
+    });
+  } catch (_) {}
+
   const ASPECTS = {
     "16:9": 16 / 9,
     "1:1": 1,
@@ -408,7 +424,17 @@
     setColor("click-color-left", colors.left);
     setColor("click-color-right", colors.right);
     setColor("click-color-middle", colors.middle);
-    setColor("click-color-side", colors.x1 || colors.x2);
+    setColor("click-color-side", colors.x1 || colors.x2 || "#aaaaaa");
+
+    const clickShow = cfg.click_show || {};
+    const setClickShow = (id, on) => {
+      const el = $(id);
+      if (el) el.checked = on !== false;
+    };
+    setClickShow("click-show-left", clickShow.left);
+    setClickShow("click-show-right", clickShow.right);
+    setClickShow("click-show-middle", clickShow.middle);
+    setClickShow("click-show-side", clickShow.side);
 
     const stops = normalizeSpeedStops(cfg.speed_stops);
     for (let i = 0; i < 4; i++) {
@@ -1309,6 +1335,12 @@
     queuePatch({ click_colors: next });
   }
 
+  function onClickShow(which, on) {
+    const next = { ...(cfg.click_show || {}) };
+    next[which] = !!on;
+    queuePatch({ click_show: next });
+  }
+
   function onSpeedStopColor(index, hex) {
     let c = String(hex || "#ffffff");
     if (c.length > 7) c = c.slice(0, 7);
@@ -1370,6 +1402,18 @@
     if (!el) return;
     el.addEventListener("input", () => onClickColor(clickColorMap[id], el.value));
     el.addEventListener("change", () => onClickColor(clickColorMap[id], el.value));
+  });
+
+  const clickShowMap = {
+    "click-show-left": "left",
+    "click-show-right": "right",
+    "click-show-middle": "middle",
+    "click-show-side": "side",
+  };
+  Object.keys(clickShowMap).forEach((id) => {
+    const el = $(id);
+    if (!el) return;
+    el.addEventListener("change", () => onClickShow(clickShowMap[id], el.checked));
   });
 
   for (let i = 0; i < 4; i++) {

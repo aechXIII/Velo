@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 APP_NAME = "Velo"
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 PRESET_CLIP_PREFIX = "VELO1."
 
 PRESET_EXCLUDE = frozenset(
@@ -273,12 +273,18 @@ DEFAULTS: Dict[str, Any] = {
     "click_opacity": 0.85,
     "click_expand": True,
     "click_style": "ring",
+    "click_show": {
+        "left": True,
+        "right": True,
+        "middle": True,
+        "side": True,
+    },
     "click_colors": {
         "left": "#ffffff",
         "right": "#cccccc",
         "middle": "#888888",
         "x1": "#aaaaaa",
-        "x2": "#666666",
+        "x2": "#aaaaaa",
     },
     "pad_enabled": True,
     "pad_shape": "rounded",

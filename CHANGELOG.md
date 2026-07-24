@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.4] - 2026-07-24
+
+- Per-button click show/hide (left, right, middle, side)
+- Click indicators follow the cursor
+- Fix side-button colors and browser Back/Forward wiping the preview
+
 ## [1.0.3] - 2026-07-23
 
 - Prevent a second Velo instance; open Settings on the already running app

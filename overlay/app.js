@@ -62,12 +62,18 @@
     click_opacity: 0.85,
     click_expand: true,
     click_style: "ring",
+    click_show: {
+      left: true,
+      right: true,
+      middle: true,
+      side: true,
+    },
     click_colors: {
       left: "#ffffff",
       right: "#cccccc",
       middle: "#888888",
       x1: "#aaaaaa",
-      x2: "#666666",
+      x2: "#aaaaaa",
     },
     pad_enabled: true,
     pad_shape: "rounded",
@@ -118,6 +124,22 @@
   };
 
   const CM_PER_INCH = 2.54;
+
+  function blockSideNav(e) {
+    if (e.button === 3 || e.button === 4) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }
+  ["mousedown", "mouseup", "auxclick"].forEach((type) => {
+    window.addEventListener(type, blockSideNav, true);
+  });
+  try {
+    history.pushState(null, "", location.href);
+    window.addEventListener("popstate", () => {
+      history.pushState(null, "", location.href);
+    });
+  } catch (_) {}
 
   let points = [];
   let clicks = [];
@@ -608,14 +630,15 @@
 
     if (msg.btn && String(msg.btn).endsWith("_down") && cfg.show_clicks) {
       const button = String(msg.btn).replace(/_down$/, "");
-      const colors = cfg.click_colors || {};
-      clicks.push({
-        x: wx,
-        y: wy,
-        t,
-        color: colors[button] || "#ffffff",
-      });
-      needsDraw = true;
+      if (isClickButtonShown(button)) {
+        const colors = cfg.click_colors || {};
+        const color =
+          button === "x1" || button === "x2"
+            ? colors.x1 || colors.x2 || "#aaaaaa"
+            : colors[button] || "#ffffff";
+        clicks.push({ t, color });
+        needsDraw = true;
+      }
     }
 
     updateCameraTarget();
@@ -827,6 +850,12 @@
     ctx.restore();
   }
 
+  function isClickButtonShown(button) {
+    const show = cfg.click_show || {};
+    if (button === "x1" || button === "x2") return show.side !== false;
+    return show[button] !== false;
+  }
+
   function drawClicks(now) {
     if (!cfg.show_clicks || !clicks.length) return;
     const life = (Number(cfg.click_lifetime_ms) || 280) / 1000;
@@ -836,11 +865,11 @@
     const maxA = Number.isFinite(baseA) ? baseA : 0.85;
     const expand = cfg.click_expand !== false;
     const style = cfg.click_style || "ring";
+    const s = worldToScreen(wx, wy);
 
     for (const c of clicks) {
       const u = (now - c.t) / life;
       if (u < 0 || u > 1) continue;
-      const s = worldToScreen(c.x, c.y);
       const fade = (1 - u) * (1 - u);
       const alpha = fade * maxA;
       const r = expand

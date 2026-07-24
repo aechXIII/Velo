@@ -181,13 +181,13 @@ class ConfigStore:
             if any(k in patch for k in feel_keys) and "motion_feel" not in patch:
                 patch = {**patch, "motion_feel": "custom"}
             for key, value in patch.items():
-                if key == "click_colors" and isinstance(value, dict):
-                    base = self._data.get("click_colors") or {}
+                if key in ("click_colors", "click_show") and isinstance(value, dict):
+                    base = self._data.get(key) or {}
                     if not isinstance(base, dict):
                         base = {}
                     merged = deepcopy(base)
                     merged.update(deepcopy(value))
-                    self._data["click_colors"] = merged
+                    self._data[key] = merged
                 elif key in DEFAULTS or key in self._data:
                     self._data[key] = deepcopy(value)
             if persist:

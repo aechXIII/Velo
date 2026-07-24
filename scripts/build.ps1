@@ -37,7 +37,11 @@ if ($LASTEXITCODE -ne 0) {
   exit 1
 }
 
-Write-Host "OK: dist\Velo.exe" -ForegroundColor Green
+if (-not (Test-Path ".\dist\Velo\Velo.exe")) {
+  Write-Error "Expected dist\Velo\Velo.exe (onedir build) missing."
+  exit 1
+}
+Write-Host "OK: dist\Velo\Velo.exe" -ForegroundColor Green
 
 if ($Installer) {
   $iscc = @(

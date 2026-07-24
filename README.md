@@ -106,7 +106,7 @@ Startup, DPI, HUD hotkey, and full backup are under the Settings tab.
 ./scripts/build.ps1 -Clean -Installer
 ```
 
-Installer build needs [Inno Setup 6](https://jrsoftware.org/isdl.php). Output goes to `dist\Velo.exe` and `installer\Output\Velo-Setup-*.exe`.
+Installer build needs [Inno Setup 6](https://jrsoftware.org/isdl.php). Output goes to `dist\Velo\` and `installer\Output\Velo-Setup-*.exe`.
 
 ---
 

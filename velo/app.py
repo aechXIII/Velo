@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 import webbrowser
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from velo import __version__
@@ -18,6 +19,7 @@ from velo.mouse_capture import MouseCapture
 from velo.pipeline import EventPipeline
 from velo.server import VeloServer
 from velo.tray import TrayApp
+from velo.updates import UpdateService, launch_installer
 
 
 def _win_message(title: str, text: str, *, error: bool = False) -> None:
@@ -71,9 +73,12 @@ class VeloApp:
         self.capture = MouseCapture()
         self.server = VeloServer(self.config)
         self.pipeline = EventPipeline(self.config, self.capture, self.server)
-        self.server.set_restart_callback(self.restart_server)
-        self.server.set_stats_reset_callback(self.pipeline.reset_stats)
-        self.server.set_show_settings_callback(self._request_show_settings)
+        self.updates = UpdateService(
+            current_version=__version__,
+            on_available=self._on_update_available,
+            on_install_ready=self._on_install_ready,
+        )
+        self._wire_server_callbacks()
         self.hotkeys = GlobalHotkeys()
 
         self._cmd: queue.Queue = queue.Queue()
@@ -83,6 +88,7 @@ class VeloApp:
         self._startup_error: Optional[str] = None
         self._hotkey_spec: Optional[str] = None
         self._autostart_enabled: Optional[bool] = None
+        self._pending_installer: Optional[Path] = None
 
         self.tray = TrayApp(
             on_open_settings=self._request_show_settings,
@@ -92,6 +98,8 @@ class VeloApp:
             on_open_overlay=lambda: webbrowser.open(self.config.overlay_url()),
             on_quit=self._request_quit,
             status_provider=self._tray_status,
+            on_open_update=self._request_show_update,
+            update_label_provider=self._tray_update_label,
         )
 
     def run(self) -> None:
@@ -122,6 +130,7 @@ class VeloApp:
 
         self._refresh_runtime_status()
         self.tray.start()
+        self._refresh_update_tray()
 
         print(f"[Velo] {__version__} ready")
         print(f"[Velo] Overlay: {self.config.overlay_url()}")
@@ -160,7 +169,14 @@ class VeloApp:
                 "Right-click the tray icon → Open Settings",
             )
 
+        self._schedule_startup_update_check()
         self._main_loop()
+
+    def _wire_server_callbacks(self) -> None:
+        self.server.set_restart_callback(self.restart_server)
+        self.server.set_stats_reset_callback(self.pipeline.reset_stats)
+        self.server.set_show_settings_callback(self._request_show_settings)
+        self.server.set_update_service(self.updates)
 
     def _refresh_runtime_status(self) -> None:
         try:
@@ -346,6 +362,77 @@ class VeloApp:
         n = self.server.client_count
         return f"Online, {n} client{'s' if n != 1 else ''}"
 
+    def _tray_update_label(self) -> Optional[str]:
+        ver = self.updates.pending_version()
+        if not ver:
+            return None
+        return f"Update to {ver}..."
+
+    def _refresh_update_tray(self) -> None:
+        ver = self.updates.pending_version()
+        if ver:
+            self.tray.set_tooltip(f"Velo {__version__} · update {ver} available")
+        else:
+            self.tray.set_tooltip(f"Velo {__version__}")
+        self.tray.refresh_menu()
+
+    def _schedule_startup_update_check(self) -> None:
+        if self._stopping:
+            return
+        enabled = bool(self.config.get("check_for_updates", True))
+        if not self.updates.should_auto_check(enabled=enabled, force_interval=True):
+            self._refresh_update_tray()
+            return
+
+        def _later() -> None:
+            if self._stopping:
+                return
+            if not bool(self.config.get("check_for_updates", True)):
+                return
+            self.updates.check_async(
+                manual=False,
+                notify=True,
+                on_done=lambda _s: self._refresh_update_tray(),
+            )
+
+        threading.Timer(4.0, _later).start()
+
+    def _on_update_available(self, status: Dict[str, Any]) -> None:
+        if self._stopping:
+            return
+        ver = str((status or {}).get("latest_version") or "")
+        if not ver:
+            return
+        self._refresh_update_tray()
+        self.tray.notify(
+            f"Velo {ver} available",
+            "Right-click the tray icon → Update, or open Settings",
+        )
+
+    def _request_show_update(self) -> None:
+        if self._stopping:
+            return
+        try:
+            self.config.update({"ui_section": "settings"}, persist=True)
+        except Exception:
+            pass
+        self._request_show_settings()
+
+    def _on_install_ready(self, setup_path: Path) -> None:
+        if self._stopping:
+            return
+        self._pending_installer = Path(setup_path)
+        print(f"[Velo] Starting installer: {setup_path}", file=sys.stderr)
+        try:
+            launch_installer(Path(setup_path))
+        except Exception as exc:
+            print(f"[Velo] Could not start installer: {exc}", file=sys.stderr)
+            self.updates.fail_install(str(exc))
+            self.tray.notify("Velo update failed", str(exc))
+            return
+        self.tray.notify("Velo", "Installer started. Closing Velo.")
+        threading.Timer(0.6, self._request_quit).start()
+
     def restart_server(self) -> None:
         try:
             self.server.stop()
@@ -353,10 +440,8 @@ class VeloApp:
             pass
         time.sleep(0.2)
         self.server = VeloServer(self.config)
-        self.server.set_restart_callback(self.restart_server)
-        self.server.set_stats_reset_callback(self.pipeline.reset_stats)
-        self.server.set_show_settings_callback(self._request_show_settings)
         self.pipeline.server = self.server
+        self._wire_server_callbacks()
         self.server.start()
         self._refresh_runtime_status()
         if self.server.running:

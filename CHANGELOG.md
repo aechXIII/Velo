@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.2] - 2026-07-24
+
+- In-app update check and install (GitHub Releases)
+- Folder install (onedir) so the app loads Python DLLs reliably
+- Auto-check option; skip / remind later; tray notice when minimized
+
 ## [1.0.4] - 2026-07-24
 
 - Per-button click show/hide (left, right, middle, side)

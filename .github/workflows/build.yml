@@ -30,9 +30,9 @@ jobs:
       - name: Build EXE
         run: .\scripts\build.ps1 -Clean
 
-      - name: Upload EXE artifact
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Velo-exe
-          path: dist/Velo.exe
+          name: Velo
+          path: dist/Velo/
           if-no-files-found: error

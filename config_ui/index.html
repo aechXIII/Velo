@@ -564,6 +564,30 @@
               <p class="note" id="hotkey-hint">Global - works with game focused</p>
             </div>
 
+            <h3 class="subhead">Updates</h3>
+            <div class="checks checks-one-col">
+              <label>
+                <input type="checkbox" data-key="check_for_updates" id="chk-check-updates" />
+                Check for updates automatically
+              </label>
+            </div>
+            <p class="note">Daily check on launch. You can always check manually below.</p>
+            <div id="update-panel" class="update-panel">
+              <p class="note" id="update-status-line">Current version: -</p>
+              <div id="update-available" class="update-available" hidden>
+                <p class="update-title" id="update-title">Update available</p>
+                <pre class="update-notes" id="update-notes"></pre>
+                <p class="note" id="update-skipped-note" hidden>You skipped this version. You can still install it.</p>
+                <div class="update-actions">
+                  <button type="button" class="btn btn-block" id="btn-update-install">Download and install</button>
+                  <button type="button" class="btn btn-block btn-ghost" id="btn-update-later">Remind me later</button>
+                  <button type="button" class="btn btn-block btn-ghost" id="btn-update-skip">Skip this version</button>
+                </div>
+              </div>
+              <button type="button" class="btn btn-block btn-ghost" id="btn-update-check">Check for updates</button>
+              <p class="note err-text" id="update-error" hidden></p>
+            </div>
+
             <h3 class="subhead">Backup</h3>
             <p class="note">Config folder: <span class="mono">%APPDATA%\Velo</span></p>
             <button type="button" class="btn btn-block" id="btn-export">Export settings</button>

@@ -4,7 +4,7 @@
 ; Or:     .\scripts\build.ps1 -Clean -Installer
 
 #define AppName      "Velo"
-#define AppVersion   "1.0.4"
+#define AppVersion   "1.1.2"
 #define AppPublisher "aech"
 #define AppURL       "https://github.com/aechXIII/Velo"
 #define AppExeName   "Velo.exe"
@@ -44,7 +44,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
 
 [Files]
-Source: "..\dist\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\Velo\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\assets\velo.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
@@ -60,6 +60,4 @@ Filename: "taskkill.exe"; Parameters: "/f /im {#AppExeName}"; Flags: runhidden; 
 
 [UninstallDelete]
 ; App install dir only - user config in %APPDATA%\Velo is kept
-Type: files; Name: "{app}\{#AppExeName}"
-Type: files; Name: "{app}\velo.ico"
-Type: dirifempty; Name: "{app}"
+Type: filesandordirs; Name: "{app}"

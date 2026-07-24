@@ -34,6 +34,12 @@ jobs:
       - name: Build EXE + installer
         run: .\scripts\build.ps1 -Clean -Installer
 
+      - name: Zip portable folder
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          Compress-Archive -Path "dist\Velo\*" -DestinationPath "dist\Velo-portable-$version.zip" -Force
+
       - name: Extract changelog section
         shell: pwsh
         run: |
@@ -55,6 +61,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/Velo.exe
+            dist/Velo-portable-*.zip
             installer/Output/Velo-Setup-*.exe
           body_path: release-notes.md

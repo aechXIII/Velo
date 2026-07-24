@@ -23,6 +23,8 @@ class TrayApp:
         on_open_overlay: Callable[[], None],
         on_quit: Callable[[], None],
         status_provider: Callable[[], str],
+        on_open_update: Optional[Callable[[], None]] = None,
+        update_label_provider: Optional[Callable[[], Optional[str]]] = None,
     ) -> None:
         self._on_open_settings = on_open_settings
         self._on_copy_url = on_copy_url
@@ -31,6 +33,8 @@ class TrayApp:
         self._on_open_overlay = on_open_overlay
         self._on_quit = on_quit
         self._status_provider = status_provider
+        self._on_open_update = on_open_update
+        self._update_label_provider = update_label_provider
         self._icon: Optional[pystray.Icon] = None
         self._thread: Optional[threading.Thread] = None
 
@@ -38,6 +42,11 @@ class TrayApp:
         image: Image.Image = load_icon(64)
         menu = pystray.Menu(
             pystray.MenuItem("Open Settings", self._settings, default=True),
+            pystray.MenuItem(
+                self._update_text,
+                self._update,
+                visible=self._update_visible,
+            ),
             pystray.MenuItem("Copy OBS URL", self._copy),
             pystray.MenuItem("Copy OBS size", self._copy_size),
             pystray.MenuItem("Preview Off", self._preview_off),
@@ -75,6 +84,46 @@ class TrayApp:
             self._icon.notify(message, title)
         except (RuntimeError, OSError, AttributeError):
             pass
+
+    def refresh_menu(self) -> None:
+        if not self._icon:
+            return
+        try:
+            self._icon.update_menu()
+        except (RuntimeError, OSError, AttributeError):
+            pass
+
+    def set_tooltip(self, text: str) -> None:
+        if not self._icon:
+            return
+        try:
+            self._icon.title = text
+        except (RuntimeError, OSError, AttributeError):
+            pass
+
+    def _update_text(self, _item=None) -> str:
+        if self._update_label_provider:
+            try:
+                label = self._update_label_provider()
+                if label:
+                    return label
+            except Exception:
+                pass
+        return "Update available..."
+
+    def _update_visible(self, _item=None) -> bool:
+        if not self._update_label_provider:
+            return False
+        try:
+            return bool(self._update_label_provider())
+        except Exception:
+            return False
+
+    def _update(self, _icon=None, _item=None) -> None:
+        if self._on_open_update:
+            self._on_open_update()
+        else:
+            self._on_open_settings()
 
     def _settings(self, _icon=None, _item=None) -> None:
         self._on_open_settings()

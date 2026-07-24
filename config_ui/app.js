@@ -463,6 +463,210 @@
     }
   }
 
+  let updateState = null;
+  let updatePollBusy = false;
+
+  function formatCheckTime(ts) {
+    if (!ts) return "";
+    try {
+      const d = new Date(Number(ts) * 1000);
+      if (Number.isNaN(d.getTime())) return "";
+      return d.toLocaleString();
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function renderUpdatePanel(state) {
+    updateState = state || null;
+    const line = $("update-status-line");
+    const avail = $("update-available");
+    const title = $("update-title");
+    const notes = $("update-notes");
+    const skippedNote = $("update-skipped-note");
+    const errEl = $("update-error");
+    const btnCheck = $("btn-update-check");
+    const btnInstall = $("btn-update-install");
+    const btnLater = $("btn-update-later");
+    const btnSkip = $("btn-update-skip");
+
+    const current = (state && state.current_version) || (cfg && cfg.version) || "";
+    const checking = !!(state && state.checking);
+    const installing = !!(state && state.installing);
+    const progress = state && state.download_progress;
+    const available = !!(state && state.available && state.pending);
+    const latest = state && (state.latest_version || (state.pending && state.pending.version));
+
+    if (line) {
+      let text = "Current version: " + (current ? "v" + current : "-");
+      if (checking) text += " · Checking...";
+      else if (installing) {
+        const pct =
+          progress != null && progress >= 0
+            ? " " + Math.round(Number(progress) * 100) + "%"
+            : "";
+        text += " · Downloading update..." + pct;
+      } else if (available && latest) text += " · Update v" + latest + " available";
+      else if (state && state.last_check_at) {
+        const when = formatCheckTime(state.last_check_at);
+        if (when) text += " · Last checked " + when;
+      }
+      line.textContent = text;
+    }
+
+    if (avail) {
+      if (available) {
+        avail.hidden = false;
+        if (title) title.textContent = "Velo " + latest + " available";
+        if (notes) notes.textContent = (state.notes || (state.pending && state.pending.notes) || "").trim() || "(No release notes)";
+        if (skippedNote) skippedNote.hidden = !state.skipped;
+      } else {
+        avail.hidden = true;
+      }
+    }
+
+    if (errEl) {
+      const err = state && state.last_error;
+      if (err) {
+        errEl.hidden = false;
+        errEl.textContent = err;
+      } else {
+        errEl.hidden = true;
+        errEl.textContent = "";
+      }
+    }
+
+    const busy = checking || installing;
+    if (btnCheck) {
+      btnCheck.disabled = busy;
+      btnCheck.textContent = checking ? "Checking..." : "Check for updates";
+    }
+    if (btnInstall) {
+      btnInstall.disabled = busy || !available;
+      btnInstall.textContent = installing
+        ? progress != null
+          ? "Downloading... " + Math.round(Number(progress) * 100) + "%"
+          : "Downloading..."
+        : "Download and install";
+    }
+    if (btnLater) btnLater.disabled = busy || !available;
+    if (btnSkip) btnSkip.disabled = busy || !available;
+  }
+
+  async function refreshUpdateStatus() {
+    if (updatePollBusy) return;
+    updatePollBusy = true;
+    try {
+      const res = await api("/api/update");
+      const data = await readJson(res);
+      if (res.ok) renderUpdatePanel(data);
+    } catch (_) {
+      /* keep last panel */
+    } finally {
+      updatePollBusy = false;
+    }
+  }
+
+  async function checkForUpdates() {
+    const btnCheck = $("btn-update-check");
+    if (btnCheck) {
+      btnCheck.disabled = true;
+      btnCheck.textContent = "Checking...";
+    }
+    try {
+      const res = await api("/api/update/check", { method: "POST" });
+      const data = await readJson(res);
+      if (!res.ok || data.ok === false) throw new Error(data.error || "Check failed");
+      renderUpdatePanel(data);
+      if (data.available && data.latest_version) {
+        toast("Update v" + data.latest_version + " available");
+      } else if (!data.last_error) {
+        toast("You're up to date");
+      } else {
+        toast(data.last_error);
+      }
+    } catch (e) {
+      toast(String(e.message || e) || "Check failed");
+      await refreshUpdateStatus();
+    }
+  }
+
+  async function remindUpdateLater() {
+    try {
+      const res = await api("/api/update/remind", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await readJson(res);
+      if (!res.ok || data.ok === false) throw new Error(data.error || "Failed");
+      renderUpdatePanel(data);
+      toast("Remind later (24h)");
+    } catch (e) {
+      toast(String(e.message || e) || "Failed");
+    }
+  }
+
+  async function skipUpdateVersion() {
+    const ver =
+      (updateState && updateState.latest_version) ||
+      (updateState && updateState.pending && updateState.pending.version) ||
+      "";
+    const ok = await confirmDialog(
+      ver
+        ? "Skip version " + ver + "?\nYou won't be prompted again until a newer release."
+        : "Skip this version?",
+      { title: "Skip version", confirmText: "Skip" }
+    );
+    if (!ok) return;
+    try {
+      const res = await api("/api/update/skip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ver ? { version: ver } : {}),
+      });
+      const data = await readJson(res);
+      if (!res.ok || data.ok === false) throw new Error(data.error || "Failed");
+      renderUpdatePanel(data);
+      toast("Skipped v" + (ver || ""));
+    } catch (e) {
+      toast(String(e.message || e) || "Failed");
+    }
+  }
+
+  async function installUpdate() {
+    const ver =
+      (updateState && updateState.latest_version) ||
+      (updateState && updateState.pending && updateState.pending.version) ||
+      "the new version";
+    const ok = await confirmDialog(
+      "Download and install Velo " +
+        ver +
+        "?\n\nVelo will close and the installer will run.\nThe OBS browser source will reconnect after restart.",
+      { title: "Download and install", confirmText: "Download and install" }
+    );
+    if (!ok) return;
+    try {
+      const res = await api("/api/update/install", { method: "POST" });
+      const data = await readJson(res);
+      if (!res.ok || data.ok === false) throw new Error(data.error || "Install failed");
+      renderUpdatePanel(data);
+      toast("Downloading update...");
+      const tick = async () => {
+        await refreshUpdateStatus();
+        if (updateState && updateState.installing) {
+          setTimeout(tick, 500);
+        } else if (updateState && updateState.last_error) {
+          toast(updateState.last_error);
+        }
+      };
+      setTimeout(tick, 400);
+    } catch (e) {
+      toast(String(e.message || e) || "Install failed");
+      await refreshUpdateStatus();
+    }
+  }
+
   let hotkeyListening = false;
   let hotkeyKeyHandler = null;
 
@@ -1131,6 +1335,7 @@
     if (!cfg.ui_obs_setup_done) {
       showSection("obs", false);
     }
+    refreshUpdateStatus();
   }
 
   async function poll() {
@@ -1153,6 +1358,9 @@
     } catch (_) {
       statusEl.textContent = "Offline";
       statusEl.classList.add("err");
+    }
+    if (currentSection === "settings") {
+      refreshUpdateStatus();
     }
   }
 
@@ -1437,6 +1645,10 @@
   if ($("btn-copy-size")) $("btn-copy-size").addEventListener("click", copySize);
   if ($("btn-export")) $("btn-export").addEventListener("click", exportSettings);
   if ($("btn-import")) $("btn-import").addEventListener("click", importSettings);
+  if ($("btn-update-check")) $("btn-update-check").addEventListener("click", checkForUpdates);
+  if ($("btn-update-install")) $("btn-update-install").addEventListener("click", installUpdate);
+  if ($("btn-update-later")) $("btn-update-later").addEventListener("click", remindUpdateLater);
+  if ($("btn-update-skip")) $("btn-update-skip").addEventListener("click", skipUpdateVersion);
   if ($("btn-reset-visuals")) {
     $("btn-reset-visuals").addEventListener("click", async () => {
       const ok = await confirmDialog(

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 from aiohttp import WSMsgType, web
+from aiohttp.web_exceptions import HTTPException
 
 from velo.config import APP_VERSION, PRESET_EXCLUDE, ConfigStore
 from velo.config_types import ConfigMap
@@ -21,6 +22,8 @@ RestartCallback = Callable[[], None]
 StatsResetCallback = Callable[[], ConfigMap]
 ShowSettingsCallback = Callable[[], None]
 JsonDict = Dict[str, Any]
+
+UpdateServiceLike = Any
 
 
 def _app_root() -> Path:
@@ -57,6 +60,7 @@ class VeloServer:
         self._restart_callback: Optional[RestartCallback] = None
         self._stats_reset_callback: Optional[StatsResetCallback] = None
         self._show_settings_callback: Optional[ShowSettingsCallback] = None
+        self._update_service: Optional[UpdateServiceLike] = None
         self._pending_move_msg: Optional[str] = None
         self._pending_msgs: List[str] = []
         self._flush_scheduled = False
@@ -72,6 +76,9 @@ class VeloServer:
 
     def set_show_settings_callback(self, cb: ShowSettingsCallback) -> None:
         self._show_settings_callback = cb
+
+    def set_update_service(self, service: UpdateServiceLike) -> None:
+        self._update_service = service
 
     @property
     def running(self) -> bool:
@@ -278,6 +285,11 @@ class VeloServer:
         app.router.add_post("/api/server/restart", self._handle_api_restart)
         app.router.add_post("/api/stats/reset", self._handle_api_stats_reset)
         app.router.add_post("/api/app/show", self._handle_api_app_show)
+        app.router.add_get("/api/update", self._handle_api_update_get)
+        app.router.add_post("/api/update/check", self._handle_api_update_check)
+        app.router.add_post("/api/update/remind", self._handle_api_update_remind)
+        app.router.add_post("/api/update/skip", self._handle_api_update_skip)
+        app.router.add_post("/api/update/install", self._handle_api_update_install)
         app.router.add_get("/api/health", self._handle_health)
         app.router.add_get("/api/status", self._handle_status)
         app.router.add_get("/ws", self._handle_ws)
@@ -678,6 +690,110 @@ class VeloServer:
         except (RuntimeError, OSError, AttributeError) as exc:
             return web.json_response({"ok": False, "error": str(exc)}, status=500)
         return web.json_response({"ok": True})
+
+    def _update_payload(self) -> JsonDict:
+        svc = self._update_service
+        if not svc:
+            return {
+                "ok": True,
+                "current_version": APP_VERSION,
+                "available": False,
+                "check_for_updates": bool(self.config.get("check_for_updates", True)),
+                "error": "updates unavailable",
+            }
+        data = svc.status()
+        data["check_for_updates"] = bool(self.config.get("check_for_updates", True))
+        return data
+
+    async def _handle_api_update_get(self, request: web.Request) -> web.Response:
+        denied = await self._require_auth(request)
+        if denied:
+            return denied
+        return web.json_response(self._update_payload())
+
+    async def _handle_api_update_check(self, request: web.Request) -> web.Response:
+        denied = await self._require_auth(request)
+        if denied:
+            return denied
+        svc = self._update_service
+        if not svc:
+            return web.json_response({"ok": False, "error": "updates unavailable"}, status=500)
+        try:
+            loop = asyncio.get_running_loop()
+            status = await loop.run_in_executor(
+                None, lambda: svc.check_now(manual=True, notify=True)
+            )
+        except Exception as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=500)
+        status = dict(status or {})
+        status["check_for_updates"] = bool(self.config.get("check_for_updates", True))
+        status["ok"] = True
+        return web.json_response(status)
+
+    async def _handle_api_update_remind(self, request: web.Request) -> web.Response:
+        denied = await self._require_auth(request)
+        if denied:
+            return denied
+        svc = self._update_service
+        if not svc:
+            return web.json_response({"ok": False, "error": "updates unavailable"}, status=500)
+        body = await self._read_json_body(request)
+        seconds = body.get("seconds")
+        try:
+            if seconds is not None:
+                status = svc.remind_later(float(seconds))
+            else:
+                status = svc.remind_later()
+        except (TypeError, ValueError, RuntimeError) as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=400)
+        status = dict(status or {})
+        status["check_for_updates"] = bool(self.config.get("check_for_updates", True))
+        status["ok"] = True
+        return web.json_response(status)
+
+    async def _handle_api_update_skip(self, request: web.Request) -> web.Response:
+        denied = await self._require_auth(request)
+        if denied:
+            return denied
+        svc = self._update_service
+        if not svc:
+            return web.json_response({"ok": False, "error": "updates unavailable"}, status=500)
+        body = await self._read_json_body(request)
+        version = body.get("version")
+        status = svc.skip_version(str(version) if version else None)
+        status = dict(status or {})
+        status["check_for_updates"] = bool(self.config.get("check_for_updates", True))
+        status["ok"] = True
+        return web.json_response(status)
+
+    async def _read_json_body(self, request: web.Request) -> JsonDict:
+        try:
+            raw = await request.json()
+            if isinstance(raw, dict):
+                return raw
+        except (json.JSONDecodeError, TypeError, ValueError, HTTPException):
+            pass
+        except Exception:
+            pass
+        return {}
+
+    async def _handle_api_update_install(self, request: web.Request) -> web.Response:
+        denied = await self._require_auth(request)
+        if denied:
+            return denied
+        svc = self._update_service
+        if not svc:
+            return web.json_response({"ok": False, "error": "updates unavailable"}, status=500)
+        try:
+            result = svc.install_async()
+        except Exception as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=500)
+        result = dict(result or {})
+        result["check_for_updates"] = bool(self.config.get("check_for_updates", True))
+        if not result.get("ok", True) and result.get("error"):
+            return web.json_response(result, status=400)
+        result["ok"] = True
+        return web.json_response(result)
 
     async def _handle_health(self, request: web.Request) -> web.Response:
         return web.json_response(

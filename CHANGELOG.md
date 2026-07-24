@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.4] - 2026-07-24
+
+- Simplify Updates settings; check every launch by default (or daily / off)
+- Update notes in a modal with install, later, and skip
+- Open Settings and update modal when an update is found (unless start minimized)
+- Cleaner release notes in the update modal
+- Esc does nothing while an update is downloading
+
 ## [1.1.2] - 2026-07-24
 
 - In-app update check and install (GitHub Releases)

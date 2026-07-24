@@ -691,6 +691,12 @@ class VeloServer:
             return web.json_response({"ok": False, "error": str(exc)}, status=500)
         return web.json_response({"ok": True})
 
+    def _update_check_mode(self) -> str:
+        mode = str(self.config.get("update_check_mode") or "launch").strip().lower()
+        if mode not in ("launch", "daily", "off"):
+            return "launch"
+        return mode
+
     def _update_payload(self) -> JsonDict:
         svc = self._update_service
         if not svc:
@@ -698,11 +704,11 @@ class VeloServer:
                 "ok": True,
                 "current_version": APP_VERSION,
                 "available": False,
-                "check_for_updates": bool(self.config.get("check_for_updates", True)),
+                "update_check_mode": self._update_check_mode(),
                 "error": "updates unavailable",
             }
         data = svc.status()
-        data["check_for_updates"] = bool(self.config.get("check_for_updates", True))
+        data["update_check_mode"] = self._update_check_mode()
         return data
 
     async def _handle_api_update_get(self, request: web.Request) -> web.Response:
@@ -726,7 +732,7 @@ class VeloServer:
         except Exception as exc:
             return web.json_response({"ok": False, "error": str(exc)}, status=500)
         status = dict(status or {})
-        status["check_for_updates"] = bool(self.config.get("check_for_updates", True))
+        status["update_check_mode"] = self._update_check_mode()
         status["ok"] = True
         return web.json_response(status)
 
@@ -747,7 +753,7 @@ class VeloServer:
         except (TypeError, ValueError, RuntimeError) as exc:
             return web.json_response({"ok": False, "error": str(exc)}, status=400)
         status = dict(status or {})
-        status["check_for_updates"] = bool(self.config.get("check_for_updates", True))
+        status["update_check_mode"] = self._update_check_mode()
         status["ok"] = True
         return web.json_response(status)
 
@@ -762,7 +768,7 @@ class VeloServer:
         version = body.get("version")
         status = svc.skip_version(str(version) if version else None)
         status = dict(status or {})
-        status["check_for_updates"] = bool(self.config.get("check_for_updates", True))
+        status["update_check_mode"] = self._update_check_mode()
         status["ok"] = True
         return web.json_response(status)
 
@@ -789,7 +795,7 @@ class VeloServer:
         except Exception as exc:
             return web.json_response({"ok": False, "error": str(exc)}, status=500)
         result = dict(result or {})
-        result["check_for_updates"] = bool(self.config.get("check_for_updates", True))
+        result["update_check_mode"] = self._update_check_mode()
         if not result.get("ok", True) and result.get("error"):
             return web.json_response(result, status=400)
         result["ok"] = True

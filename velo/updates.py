@@ -433,18 +433,29 @@ class UpdateService:
         return candidates[0]
 
     @staticmethod
-    def _aggregate_notes(releases_asc: List[ReleaseInfo]) -> str:
+    def _clean_release_notes(text: str) -> str:
+        lines = []
+        for raw in str(text or "").replace("\r\n", "\n").split("\n"):
+            line = raw.rstrip()
+            stripped = line.lstrip()
+            if stripped.startswith("#"):
+                line = stripped.lstrip("#").strip()
+            line = line.replace("**", "").replace("__", "")
+            lines.append(line)
+        text = "\n".join(lines)
+        while "\n\n\n" in text:
+            text = text.replace("\n\n\n", "\n\n")
+        return text.strip()
+
+    @classmethod
+    def _aggregate_notes(cls, releases_asc: List[ReleaseInfo]) -> str:
         parts: List[str] = []
         for rel in reversed(releases_asc):
-            body = (rel.notes or "").strip()
-            header = f"## {rel.version}"
+            body = cls._clean_release_notes(rel.notes or "")
             if body:
-                if body.lstrip().lower().startswith("## "):
-                    parts.append(body)
-                else:
-                    parts.append(f"{header}\n\n{body}")
+                parts.append(body)
             else:
-                parts.append(f"{header}\n\n(No release notes)")
+                parts.append(f"[{rel.version}]\n\n(No release notes)")
         text = "\n\n".join(parts).strip()
         if len(text) > 8000:
             text = text[:8000].rstrip() + "\n\n..."

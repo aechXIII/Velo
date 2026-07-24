@@ -132,6 +132,10 @@ class ConfigStore:
                                 merged[k] = deepcopy(v)
                             merged["render_quality"] = "balanced"
                             merged["ui_preview_mode"] = "lite"
+                        if "update_check_mode" not in raw and "check_for_updates" in raw:
+                            merged["update_check_mode"] = (
+                                "off" if raw.get("check_for_updates") is False else "launch"
+                            )
                         self._data = merged
                 except (json.JSONDecodeError, OSError):
                     self._data = deepcopy(DEFAULTS)

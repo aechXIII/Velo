@@ -784,54 +784,36 @@ button, input, select, textarea {
   pointer-events: none;
 }
 
-.update-panel {
-  margin-bottom: 14px;
+.err-text {
+  color: var(--danger);
 }
 
-.update-available {
-  margin: 10px 0 12px;
-  padding: 12px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius);
-  background: var(--elev);
+.update-modal {
+  width: min(440px, 100%);
 }
 
-.update-title {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 8px;
-}
-
-.update-notes {
-  max-height: 180px;
+.update-modal-notes {
+  max-height: min(280px, 46vh);
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--font);
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.45;
   color: var(--muted);
   background: #0a0a0c;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 10px;
-  margin: 0 0 10px;
+  padding: 10px 11px;
+  margin: 10px 0 0;
 }
 
-.update-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 4px;
+.update-modal-actions {
+  flex-wrap: wrap;
 }
 
-.update-actions .btn {
-  margin-bottom: 0;
-}
-
-.err-text {
-  color: var(--danger);
+#update-modal-root {
+  z-index: 110;
 }
 
 .field {

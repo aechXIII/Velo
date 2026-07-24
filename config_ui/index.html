@@ -565,28 +565,17 @@
             </div>
 
             <h3 class="subhead">Updates</h3>
-            <div class="checks checks-one-col">
-              <label>
-                <input type="checkbox" data-key="check_for_updates" id="chk-check-updates" />
-                Check for updates automatically
-              </label>
+            <div class="field">
+              <label>Check for updates</label>
+              <select data-key="update_check_mode" id="sel-update-check">
+                <option value="launch">Every launch</option>
+                <option value="daily">Daily</option>
+                <option value="off">Off</option>
+              </select>
             </div>
-            <p class="note">Daily check on launch. You can always check manually below.</p>
-            <div id="update-panel" class="update-panel">
-              <p class="note" id="update-status-line">Current version: -</p>
-              <div id="update-available" class="update-available" hidden>
-                <p class="update-title" id="update-title">Update available</p>
-                <pre class="update-notes" id="update-notes"></pre>
-                <p class="note" id="update-skipped-note" hidden>You skipped this version. You can still install it.</p>
-                <div class="update-actions">
-                  <button type="button" class="btn btn-block" id="btn-update-install">Download and install</button>
-                  <button type="button" class="btn btn-block btn-ghost" id="btn-update-later">Remind me later</button>
-                  <button type="button" class="btn btn-block btn-ghost" id="btn-update-skip">Skip this version</button>
-                </div>
-              </div>
-              <button type="button" class="btn btn-block btn-ghost" id="btn-update-check">Check for updates</button>
-              <p class="note err-text" id="update-error" hidden></p>
-            </div>
+            <p class="note" id="update-status-line">-</p>
+            <button type="button" class="btn btn-block btn-ghost" id="btn-update-check">Check now</button>
+            <p class="note err-text" id="update-error" hidden></p>
 
             <h3 class="subhead">Backup</h3>
             <p class="note">Config folder: <span class="mono">%APPDATA%\Velo</span></p>
@@ -619,6 +608,18 @@
         <button type="button" class="btn btn-ghost" id="modal-cancel">Cancel</button>
         <button type="button" class="btn btn-ghost" id="modal-secondary" hidden>Other</button>
         <button type="button" class="btn" id="modal-confirm">OK</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-root" id="update-modal-root" hidden>
+    <div class="modal-backdrop" id="update-modal-backdrop"></div>
+    <div class="modal update-modal" role="dialog" aria-modal="true" aria-labelledby="update-modal-title">
+      <h3 class="modal-title" id="update-modal-title">Update available</h3>
+      <pre class="update-modal-notes" id="update-modal-notes"></pre>
+      <div class="modal-actions update-modal-actions">
+        <button type="button" class="btn btn-ghost" id="update-modal-skip">Skip</button>
+        <button type="button" class="btn btn-ghost" id="update-modal-later">Later</button>
+        <button type="button" class="btn" id="update-modal-install">Download and install</button>
       </div>
     </div>
   </div>

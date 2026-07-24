@@ -465,30 +465,21 @@
 
   let updateState = null;
   let updatePollBusy = false;
+  let updateModalOpen = false;
+  let updateModalVersion = null;
 
-  function formatCheckTime(ts) {
-    if (!ts) return "";
-    try {
-      const d = new Date(Number(ts) * 1000);
-      if (Number.isNaN(d.getTime())) return "";
-      return d.toLocaleString();
-    } catch (_) {
-      return "";
-    }
-  }
+  const updateModalRoot = $("update-modal-root");
+  const updateModalTitle = $("update-modal-title");
+  const updateModalNotes = $("update-modal-notes");
+  const updateModalInstall = $("update-modal-install");
+  const updateModalLater = $("update-modal-later");
+  const updateModalSkip = $("update-modal-skip");
 
   function renderUpdatePanel(state) {
     updateState = state || null;
     const line = $("update-status-line");
-    const avail = $("update-available");
-    const title = $("update-title");
-    const notes = $("update-notes");
-    const skippedNote = $("update-skipped-note");
     const errEl = $("update-error");
     const btnCheck = $("btn-update-check");
-    const btnInstall = $("btn-update-install");
-    const btnLater = $("btn-update-later");
-    const btnSkip = $("btn-update-skip");
 
     const current = (state && state.current_version) || (cfg && cfg.version) || "";
     const checking = !!(state && state.checking);
@@ -498,31 +489,16 @@
     const latest = state && (state.latest_version || (state.pending && state.pending.version));
 
     if (line) {
-      let text = "Current version: " + (current ? "v" + current : "-");
-      if (checking) text += " · Checking...";
+      let text = current ? "v" + current : "-";
+      if (checking) text += " - Checking...";
       else if (installing) {
         const pct =
           progress != null && progress >= 0
             ? " " + Math.round(Number(progress) * 100) + "%"
             : "";
-        text += " · Downloading update..." + pct;
-      } else if (available && latest) text += " · Update v" + latest + " available";
-      else if (state && state.last_check_at) {
-        const when = formatCheckTime(state.last_check_at);
-        if (when) text += " · Last checked " + when;
-      }
+        text += " - Downloading..." + pct;
+      } else if (available && latest) text += " - v" + latest + " available";
       line.textContent = text;
-    }
-
-    if (avail) {
-      if (available) {
-        avail.hidden = false;
-        if (title) title.textContent = "Velo " + latest + " available";
-        if (notes) notes.textContent = (state.notes || (state.pending && state.pending.notes) || "").trim() || "(No release notes)";
-        if (skippedNote) skippedNote.hidden = !state.skipped;
-      } else {
-        avail.hidden = true;
-      }
     }
 
     if (errEl) {
@@ -539,18 +515,88 @@
     const busy = checking || installing;
     if (btnCheck) {
       btnCheck.disabled = busy;
-      btnCheck.textContent = checking ? "Checking..." : "Check for updates";
+      btnCheck.textContent = checking ? "Checking..." : "Check now";
     }
-    if (btnInstall) {
-      btnInstall.disabled = busy || !available;
-      btnInstall.textContent = installing
+
+    if (updateModalOpen) {
+      syncUpdateModal(state);
+    } else {
+      maybeShowUpdateModal(state);
+    }
+  }
+
+  function maybeShowUpdateModal(state) {
+    if (!updateModalRoot || !state) return;
+    if (!state.should_prompt || !state.available || !state.pending) return;
+    if (state.checking || state.installing) return;
+    const ver = String(state.latest_version || state.pending.version || "");
+    if (!ver) return;
+    if (updateModalOpen && updateModalVersion === ver) return;
+    openUpdateModal(state);
+  }
+
+  function openUpdateModal(state) {
+    if (!updateModalRoot) return;
+    updateModalOpen = true;
+    updateModalVersion = String(
+      (state && (state.latest_version || (state.pending && state.pending.version))) || ""
+    );
+    syncUpdateModal(state);
+    updateModalRoot.hidden = false;
+    setTimeout(() => {
+      if (updateModalInstall) updateModalInstall.focus();
+    }, 0);
+  }
+
+  function closeUpdateModal() {
+    if (!updateModalRoot) return;
+    updateModalRoot.hidden = true;
+    updateModalOpen = false;
+    updateModalVersion = null;
+  }
+
+  function formatUpdateNotes(raw) {
+    let text = String(raw || "").replace(/\r\n/g, "\n");
+    const lines = text.split("\n").map((line) => {
+      let s = line.replace(/\*\*/g, "").replace(/__/g, "");
+      const t = s.trim();
+      if (t.startsWith("#")) s = t.replace(/^#+\s*/, "");
+      return s;
+    });
+    text = lines.join("\n");
+    while (text.indexOf("\n\n\n") >= 0) text = text.replace(/\n\n\n/g, "\n\n");
+    text = text.trim();
+    return text || "(No release notes)";
+  }
+
+  function syncUpdateModal(state) {
+    if (!state) return;
+    const ver =
+      state.latest_version ||
+      (state.pending && state.pending.version) ||
+      updateModalVersion ||
+      "";
+    const notes = formatUpdateNotes(
+      state.notes || (state.pending && state.pending.notes) || ""
+    );
+    const installing = !!(state.installing);
+    const progress = state.download_progress;
+    const busy = !!(state.checking || installing);
+
+    if (updateModalTitle) {
+      updateModalTitle.textContent = ver ? "Velo " + ver + " available" : "Update available";
+    }
+    if (updateModalNotes) updateModalNotes.textContent = notes;
+    if (updateModalInstall) {
+      updateModalInstall.disabled = busy || !state.available;
+      updateModalInstall.textContent = installing
         ? progress != null
           ? "Downloading... " + Math.round(Number(progress) * 100) + "%"
           : "Downloading..."
         : "Download and install";
     }
-    if (btnLater) btnLater.disabled = busy || !available;
-    if (btnSkip) btnSkip.disabled = busy || !available;
+    if (updateModalLater) updateModalLater.disabled = busy;
+    if (updateModalSkip) updateModalSkip.disabled = busy;
   }
 
   async function refreshUpdateStatus() {
@@ -579,9 +625,9 @@
       if (!res.ok || data.ok === false) throw new Error(data.error || "Check failed");
       renderUpdatePanel(data);
       if (data.available && data.latest_version) {
-        toast("Update v" + data.latest_version + " available");
+        openUpdateModal(data);
       } else if (!data.last_error) {
-        toast("You're up to date");
+        toast("Up to date");
       } else {
         toast(data.last_error);
       }
@@ -600,8 +646,9 @@
       });
       const data = await readJson(res);
       if (!res.ok || data.ok === false) throw new Error(data.error || "Failed");
+      closeUpdateModal();
       renderUpdatePanel(data);
-      toast("Remind later (24h)");
+      toast("Later");
     } catch (e) {
       toast(String(e.message || e) || "Failed");
     }
@@ -611,14 +658,8 @@
     const ver =
       (updateState && updateState.latest_version) ||
       (updateState && updateState.pending && updateState.pending.version) ||
+      updateModalVersion ||
       "";
-    const ok = await confirmDialog(
-      ver
-        ? "Skip version " + ver + "?\nYou won't be prompted again until a newer release."
-        : "Skip this version?",
-      { title: "Skip version", confirmText: "Skip" }
-    );
-    if (!ok) return;
     try {
       const res = await api("/api/update/skip", {
         method: "POST",
@@ -627,37 +668,29 @@
       });
       const data = await readJson(res);
       if (!res.ok || data.ok === false) throw new Error(data.error || "Failed");
+      closeUpdateModal();
       renderUpdatePanel(data);
-      toast("Skipped v" + (ver || ""));
+      toast(ver ? "Skipped v" + ver : "Skipped");
     } catch (e) {
       toast(String(e.message || e) || "Failed");
     }
   }
 
   async function installUpdate() {
-    const ver =
-      (updateState && updateState.latest_version) ||
-      (updateState && updateState.pending && updateState.pending.version) ||
-      "the new version";
-    const ok = await confirmDialog(
-      "Download and install Velo " +
-        ver +
-        "?\n\nVelo will close and the installer will run.\nThe OBS browser source will reconnect after restart.",
-      { title: "Download and install", confirmText: "Download and install" }
-    );
-    if (!ok) return;
     try {
       const res = await api("/api/update/install", { method: "POST" });
       const data = await readJson(res);
       if (!res.ok || data.ok === false) throw new Error(data.error || "Install failed");
       renderUpdatePanel(data);
-      toast("Downloading update...");
+      if (!updateModalOpen) openUpdateModal(data);
+      else syncUpdateModal(data);
       const tick = async () => {
         await refreshUpdateStatus();
         if (updateState && updateState.installing) {
           setTimeout(tick, 500);
         } else if (updateState && updateState.last_error) {
           toast(updateState.last_error);
+          if (updateModalOpen) syncUpdateModal(updateState);
         }
       };
       setTimeout(tick, 400);
@@ -1359,9 +1392,7 @@
       statusEl.textContent = "Offline";
       statusEl.classList.add("err");
     }
-    if (currentSection === "settings") {
-      refreshUpdateStatus();
-    }
+    refreshUpdateStatus();
   }
 
   async function exportSettings() {
@@ -1646,9 +1677,21 @@
   if ($("btn-export")) $("btn-export").addEventListener("click", exportSettings);
   if ($("btn-import")) $("btn-import").addEventListener("click", importSettings);
   if ($("btn-update-check")) $("btn-update-check").addEventListener("click", checkForUpdates);
-  if ($("btn-update-install")) $("btn-update-install").addEventListener("click", installUpdate);
-  if ($("btn-update-later")) $("btn-update-later").addEventListener("click", remindUpdateLater);
-  if ($("btn-update-skip")) $("btn-update-skip").addEventListener("click", skipUpdateVersion);
+  if (updateModalInstall) updateModalInstall.addEventListener("click", installUpdate);
+  if (updateModalLater) updateModalLater.addEventListener("click", remindUpdateLater);
+  if (updateModalSkip) updateModalSkip.addEventListener("click", skipUpdateVersion);
+  document.addEventListener("keydown", (e) => {
+    if (!updateModalRoot || updateModalRoot.hidden) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      if (updateState && updateState.installing) return;
+      if (updateModalLater && !updateModalLater.disabled) remindUpdateLater();
+    }
+  }, true);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") refreshUpdateStatus();
+  });
   if ($("btn-reset-visuals")) {
     $("btn-reset-visuals").addEventListener("click", async () => {
       const ok = await confirmDialog(

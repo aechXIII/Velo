@@ -379,15 +379,20 @@ class VeloApp:
     def _schedule_startup_update_check(self) -> None:
         if self._stopping:
             return
-        enabled = bool(self.config.get("check_for_updates", True))
-        if not self.updates.should_auto_check(enabled=enabled, force_interval=True):
+        mode = str(self.config.get("update_check_mode") or "launch").strip().lower()
+        if mode == "off":
+            self._refresh_update_tray()
+            return
+        daily = mode == "daily"
+        if not self.updates.should_auto_check(enabled=True, force_interval=daily):
             self._refresh_update_tray()
             return
 
         def _later() -> None:
             if self._stopping:
                 return
-            if not bool(self.config.get("check_for_updates", True)):
+            m = str(self.config.get("update_check_mode") or "launch").strip().lower()
+            if m == "off":
                 return
             self.updates.check_async(
                 manual=False,
@@ -404,10 +409,18 @@ class VeloApp:
         if not ver:
             return
         self._refresh_update_tray()
-        self.tray.notify(
-            f"Velo {ver} available",
-            "Right-click the tray icon → Update, or open Settings",
-        )
+        if not bool(self.config.get("start_minimized")):
+            try:
+                self.config.update({"ui_section": "settings"}, persist=True)
+            except Exception:
+                pass
+            self._request_show_settings()
+            self.tray.notify(f"Velo {ver} available", "Update available")
+        else:
+            self.tray.notify(
+                f"Velo {ver} available",
+                "Right-click the tray icon -> Update, or open Settings",
+            )
 
     def _request_show_update(self) -> None:
         if self._stopping:

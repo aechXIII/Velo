@@ -30,9 +30,15 @@
   let applyTimer = null;
   let suppress = false;
   let previewMode = "lite";
+  let previewAuto = false;
   let currentSection = "presets";
   let presetBaseline = null;
   let presetDirty = false;
+
+  const undoStack = [];
+  const redoStack = [];
+  const MAX_UNDO = 50;
+  let undoSnapshot = null;
 
   // Populated from /api/presets (single source: velo.defaults.PRESET_EXCLUDE)
   let presetExclude = new Set();
@@ -49,26 +55,77 @@
   const stage = $("stage");
   const previewViewport = $("preview-viewport");
   const previewOff = $("preview-off");
-  const previewModeEl = $("preview-mode");
-  const toastEl = $("toast");
+  const previewModeBtns = $("preview-mode-btns");
+  const previewLoading = $("preview-loading");
+  const previewError = $("preview-error");
+  const btnPreviewRetry = $("btn-preview-retry");
+  const btnUndo = $("btn-undo");
+  const btnRedo = $("btn-redo");
+  const toastContainer = $("toast-container");
   const obsUrl = $("obs-url");
   const statusEl = $("status");
   const sizeLabel = $("size-label");
   const sizeLabel2 = $("size-label-2");
   const presetList = $("preset-list");
-  const presetNameInput = $("preset-name");
-  const dirtyBanner = $("preset-dirty");
-  const dirtyLabel = $("preset-dirty-label");
-  const btnDirtyUpdate = $("btn-dirty-update");
   const btnDirtySave = $("btn-dirty-save");
   const btnDirtyDiscard = $("btn-dirty-discard");
-  const btnPresetUpdate = $("btn-preset-update");
+  const btnDirtyUpdate = $("btn-dirty-update");
 
-  function toast(msg) {
-    toastEl.hidden = false;
-    toastEl.textContent = msg;
-    clearTimeout(toast._t);
-    toast._t = setTimeout(() => (toastEl.hidden = true), 2000);
+  /* Preset toolbar more menu */
+  const presetMenu = $("preset-toolbar-menu");
+  const presetMoreBtn = $("btn-preset-more-btn");
+  if (presetMoreBtn && presetMenu) {
+    presetMoreBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      presetMenu.hidden = !presetMenu.hidden;
+    });
+  }
+  document.addEventListener("click", () => {
+    if (presetMenu && !presetMenu.hidden) {
+      presetMenu.hidden = true;
+    }
+  });
+  if (presetMenu) {
+    presetMenu.addEventListener("click", () => {
+      presetMenu.hidden = true;
+    });
+  }
+
+  const MAX_TOASTS = 5;
+
+  function toast(msg, type) {
+    if (!toastContainer) return;
+    const t = type || "info";
+
+    const el = document.createElement("div");
+    el.className = "toast-item toast-" + t;
+    el.innerHTML =
+      '<span class="toast-msg"></span>' +
+      '<button type="button" class="toast-close" aria-label="Close">&times;</button>';
+    el.querySelector(".toast-msg").textContent = msg;
+
+    const closeBtn = el.querySelector(".toast-close");
+    closeBtn.addEventListener("click", () => removeToast(el));
+
+    toastContainer.appendChild(el);
+
+    const items = toastContainer.querySelectorAll(".toast-item");
+    while (items.length > MAX_TOASTS) {
+      removeToast(items[0]);
+    }
+
+    const duration = (t === "error" || t === "warning") ? 5000 : 3000;
+    el._timer = setTimeout(() => removeToast(el), duration);
+  }
+
+  function removeToast(el) {
+    if (el._removed) return;
+    el._removed = true;
+    clearTimeout(el._timer);
+    el.classList.add("removing");
+    el.addEventListener("animationend", () => {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }, { once: true });
   }
 
   const modalRoot = $("modal-root");
@@ -189,6 +246,26 @@
     } else if (e.key === "Enter" && modalInput && !modalInputWrap.hidden && document.activeElement === modalInput) {
       e.preventDefault();
       closeModal({ ok: true, action: "confirm", value: modalInput.value });
+    } else if (e.key === "Tab") {
+      var modal = modalRoot.querySelector('.modal');
+      if (!modal) return;
+      var focusable = modal.querySelectorAll(
+        'button:not([hidden]):not([disabled]), input:not([hidden]):not([disabled]), textarea:not([hidden]):not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+      var first = focusable[0];
+      var last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     }
   });
 
@@ -200,6 +277,9 @@
         ...(opts.headers || {}),
         ...authHeaders,
       },
+    }).catch((e) => {
+      toast("Connection lost");
+      throw e;
     });
   }
 
@@ -254,6 +334,130 @@
     return JSON.stringify(obj);
   }
 
+  /* Inline rename: double-click preset name */
+  function initInlineRename() {
+    const nameEl = $("preset-selected-name");
+    if (!nameEl) return;
+    let input = null;
+    nameEl.addEventListener("dblclick", () => {
+      if (!selectedPreset.name || selectedPreset.kind !== "user") return;
+      if (input) return;
+      const currentName = selectedPreset.name;
+      input = document.createElement("input");
+      input.type = "text";
+      input.className = "preset-rename-input";
+      input.value = currentName;
+      input.maxLength = 48;
+      input.spellcheck = false;
+      nameEl.textContent = "";
+      nameEl.appendChild(input);
+      input.focus();
+      input.select();
+      function finish(accepted) {
+        if (!input) return;
+        const newName = input.value.trim();
+        input.remove();
+        input = null;
+        if (accepted && newName && newName !== currentName) {
+          doRenamePreset(currentName, newName);
+        } else {
+          updateDirtyUi();
+        }
+      }
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); finish(true); }
+        else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+      });
+      input.addEventListener("blur", () => finish(true));
+    });
+  }
+
+  async function doRenamePreset(oldName, newName) {
+    try {
+      const res = await api("/api/presets/rename", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ old_name: oldName, new_name: newName }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || "rename");
+      if (data.data) cfg = data.data;
+      selectedPreset = { name: newName, kind: "user" };
+      if (data.presets) {
+        presetInfo = {
+          builtin: data.presets.builtin || [],
+          user: data.presets.user || [],
+          active: data.presets.active || newName,
+          active_kind: data.presets.active_kind || "user",
+        };
+      }
+      bindForm();
+      capturePresetBaseline();
+      toast("Renamed to " + newName);
+      await refreshPresets();
+    } catch (e) {
+      toast(String(e.message || e) || "Rename failed");
+      updateDirtyUi();
+    }
+  }
+
+  async function renameSelectedPreset() {
+    if (!selectedPreset.name || selectedPreset.kind !== "user") {
+      toast("Pick a saved preset first");
+      return;
+    }
+    const newName = await promptDialog("New name for this preset:", {
+      title: "Rename preset",
+      value: selectedPreset.name,
+      confirmText: "Rename",
+    });
+    if (newName == null) return;
+    if (!newName) { toast("Enter a name"); return; }
+    if (newName === selectedPreset.name) return;
+    await doRenamePreset(selectedPreset.name, newName);
+  }
+
+  async function duplicateSelectedPreset() {
+    if (!selectedPreset.name) {
+      toast("Select a preset first");
+      return;
+    }
+    let name = selectedPreset.kind === "builtin"
+      ? selectedPreset.name + " custom"
+      : selectedPreset.name + " copy";
+    const existing = (presetInfo.user || []).map(p => p.name);
+    if (existing.indexOf(name) !== -1) {
+      let i = 2;
+      while (existing.indexOf(name + " (" + i + ")") !== -1) i++;
+      name = name + " (" + i + ")";
+    }
+    try {
+      const res = await api("/api/presets/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || "duplicate");
+      if (data.data) cfg = data.data;
+      if (data.presets) {
+        presetInfo = {
+          builtin: data.presets.builtin || [],
+          user: data.presets.user || [],
+          active: data.presets.active || name,
+          active_kind: data.presets.active_kind || "user",
+        };
+      }
+      selectedPreset = { name, kind: "user" };
+      bindForm();
+      capturePresetBaseline();
+      toast("Duplicated as " + name);
+      await refreshPresets();
+    } catch (e) {
+      toast(String(e.message || e) || "Duplicate failed");
+    }
+  }
+
   function capturePresetBaseline() {
     presetBaseline = presetRelevantSnapshot(cfg);
     presetDirty = false;
@@ -275,49 +479,26 @@
     const name = selectedPreset.name || cfg.active_preset || "";
     const isUser = selectedPreset.kind === "user";
     const hasSelection = !!selectedPreset.name;
-    if (dirtyBanner) dirtyBanner.hidden = !presetDirty;
-    if (dirtyLabel) {
-      dirtyLabel.textContent = presetDirty
-        ? isUser
-          ? `"${name}" was changed.`
-          : `"${name}" is a default. Save as new to keep your changes.`
-        : "";
-    }
-    if (btnDirtyUpdate) {
-      btnDirtyUpdate.hidden = !(presetDirty && isUser);
-    }
+    const dirtyRow = $("preset-toolbar-dirty");
+    if (dirtyRow) dirtyRow.hidden = !presetDirty;
     const selName = $("preset-selected-name");
     if (selName) {
+      const label = hasSelection ? name : "No preset selected";
       const dirtyMark = hasSelection && presetDirty ? " *" : "";
-      selName.textContent = (name || "None") + dirtyMark;
+      selName.textContent = label + dirtyMark;
+      selName.title = name || "";
     }
     const setBtn = (id, enabled) => {
       const el = $(id);
       if (el) el.disabled = !enabled;
     };
-    if (btnPresetUpdate) {
-      btnPresetUpdate.disabled = !(isUser && presetDirty);
-    }
-    setBtn("btn-preset-rename", isUser && hasSelection);
-    setBtn("btn-preset-delete", isUser && hasSelection);
     setBtn("btn-preset-export", hasSelection);
     setBtn("btn-preset-copy", hasSelection);
-  }
-
-  function getPresetGroupCollapsed(key, fallback) {
-    try {
-      const v = localStorage.getItem("velo.presetGroup." + key);
-      if (v === "1") return true;
-      if (v === "0") return false;
-    } catch (_) {}
-    if (key === "user") return false;
-    return !!fallback;
-  }
-
-  function setPresetGroupCollapsed(key, collapsed) {
-    try {
-      localStorage.setItem("velo.presetGroup." + key, collapsed ? "1" : "0");
-    } catch (_) {}
+    setBtn("btn-preset-more-btn", hasSelection);
+    const dirtyUpdate = $("btn-dirty-update");
+    if (dirtyUpdate) {
+      dirtyUpdate.style.display = (isUser && presetDirty) ? "" : "none";
+    }
   }
 
   function updateFeelUi() {
@@ -345,16 +526,16 @@
     const doneBtn = $("btn-setup-done");
     if (card) card.classList.toggle("first-run", !done);
     if (badge) {
-      badge.textContent = done ? "OK" : "Setup";
-      badge.classList.toggle("done", done);
-      badge.hidden = false;
+      badge.hidden = done;
     }
     if (title) title.textContent = "Browser source";
     if (doneBtn) doneBtn.hidden = done;
   }
 
   function loadPreview() {
-    const mode = previewMode || "lite";
+    const mode = previewAuto
+      ? (document.hasFocus() ? "live" : "off")
+      : (previewMode || "lite");
     if (mode === "off") {
       try {
         frame.removeAttribute("src");
@@ -363,9 +544,11 @@
       frame.hidden = true;
       if (previewViewport) previewViewport.classList.add("is-off");
       if (previewOff) {
-        previewOff.hidden = true;
+        previewOff.hidden = false;
         previewOff.classList.add("is-visible");
       }
+      if (previewLoading) previewLoading.hidden = true;
+      if (previewError) previewError.hidden = true;
       return;
     }
     if (previewOff) {
@@ -373,18 +556,40 @@
       previewOff.hidden = true;
     }
     if (previewViewport) previewViewport.classList.remove("is-off");
+    if (previewError) previewError.hidden = true;
     frame.hidden = false;
     layoutPreviewCanvas();
     const u = overlayUrl();
     if (!u || !cfg.port) return;
     const sep = u.includes("?") ? "&" : "?";
     const extra = mode === "lite" ? "preview=lite&" : "";
+    if (previewLoading) previewLoading.hidden = false;
     frame.src = u + sep + extra + "_=" + Date.now();
   }
 
+  function updatePreviewModeBtns() {
+    if (!previewModeBtns) return;
+    const mode = previewMode || "lite";
+    previewModeBtns.querySelectorAll(".preview-mode-btn").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.mode === mode);
+    });
+  }
+
+  function onPreviewLoad() {
+    if (previewLoading) previewLoading.hidden = true;
+    if (previewError) previewError.hidden = true;
+  }
+
+  function onPreviewError() {
+    if (previewLoading) previewLoading.hidden = true;
+    if (previewError) previewError.hidden = false;
+  }
+
   function setPreviewMode(mode, persist) {
-    previewMode = mode === "off" || mode === "live" || mode === "lite" ? mode : "lite";
-    if (previewModeEl) previewModeEl.value = previewMode;
+    const valid = ["off", "lite", "live", "auto"];
+    previewMode = valid.indexOf(mode) !== -1 ? mode : "lite";
+    previewAuto = mode === "auto";
+    updatePreviewModeBtns();
     loadPreview();
     if (persist) queuePatch({ ui_preview_mode: previewMode });
   }
@@ -400,6 +605,120 @@
     if (persist) queuePatch({ ui_section: currentSection });
   }
 
+  function getFieldRows(section) {
+    const rows = [];
+    const children = section.children;
+    for (let i = 0; i < children.length; i++) {
+      const el = children[i];
+      if (el.tagName === 'H2') continue;
+      if (el.classList.contains('row2') || el.classList.contains('click-buttons')) {
+        for (let j = 0; j < el.children.length; j++) {
+          rows.push(el.children[j]);
+        }
+      } else {
+        rows.push(el);
+      }
+    }
+    return rows;
+  }
+
+  function getRowSearchText(row) {
+    const labels = row.querySelectorAll('label, .slider-h span, h3, .feel-pill, .btn, strong, .setup-card-h strong');
+    let text = '';
+    labels.forEach(function(el) {
+      text += ' ' + (el.textContent || '');
+    });
+    return text;
+  }
+
+  function filterSettings(query) {
+    var q = query.toLowerCase().trim();
+    var sections = document.querySelectorAll('.block.sec');
+    var anyVisible = false;
+    var searchEmpty = document.getElementById('search-empty');
+
+    sections.forEach(function(section) {
+      var heading = section.querySelector('h2');
+      var headingText = heading ? heading.textContent.toLowerCase() : '';
+      var headingMatch = q === '' || headingText.indexOf(q) !== -1;
+
+      var rows = getFieldRows(section);
+      var sectionHasMatch = headingMatch;
+
+      rows.forEach(function(row) {
+        var rowText = getRowSearchText(row).toLowerCase();
+        var match = q === '' || headingMatch || rowText.indexOf(q) !== -1;
+        row.classList.toggle('search-hidden', !match);
+        if (match) sectionHasMatch = true;
+      });
+
+      if (q === '') {
+        section.hidden = section.dataset.section !== currentSection;
+      } else {
+        section.hidden = !sectionHasMatch;
+      }
+
+      if (!section.hidden) anyVisible = true;
+    });
+
+    if (searchEmpty) {
+      searchEmpty.hidden = q === '' || anyVisible;
+    }
+  }
+
+  function pushUndo() {
+    undoStack.push(structuredClone(cfg));
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+    redoStack.length = 0;
+  }
+
+  async function undo() {
+    if (undoStack.length === 0) return;
+    redoStack.push(structuredClone(cfg));
+    var prev = undoStack.pop();
+    cfg = prev;
+    bindForm();
+    flashSettingsPanel();
+    updateUndoRedoButtons();
+    try {
+      await api("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cfg),
+      });
+    } catch (_) {}
+  }
+
+  async function redo() {
+    if (redoStack.length === 0) return;
+    undoStack.push(structuredClone(cfg));
+    var next = redoStack.pop();
+    cfg = next;
+    bindForm();
+    flashSettingsPanel();
+    updateUndoRedoButtons();
+    try {
+      await api("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cfg),
+      });
+    } catch (_) {}
+  }
+
+  function flashSettingsPanel() {
+    var main = document.querySelector(".panel-main");
+    if (!main) return;
+    main.classList.remove("settings-flash");
+    void main.offsetWidth;
+    main.classList.add("settings-flash");
+  }
+
+  function updateUndoRedoButtons() {
+    if (btnUndo) btnUndo.disabled = undoStack.length === 0;
+    if (btnRedo) btnRedo.disabled = redoStack.length === 0;
+  }
+
   function bindForm() {
     suppress = true;
     document.querySelectorAll("[data-key]").forEach((el) => {
@@ -407,10 +726,6 @@
       let val = cfg[key];
       if (el.type === "checkbox") {
         el.checked = !!val;
-      } else if (el.hasAttribute("data-color")) {
-        let c = String(val || "#ffffff");
-        if (c.length > 7) c = c.slice(0, 7);
-        el.value = c;
       } else if (el.type === "range") {
         el.value = val;
       } else {
@@ -452,6 +767,7 @@
       setColor("speed-stop-" + i, stops[i].color);
     }
     updateTrailColorUi();
+    updateGlowOptionsUi();
     updateHotkeyUi();
     updateStartupUi();
 
@@ -471,6 +787,18 @@
     if (minChk) {
       minChk.disabled = !auto;
       if (!auto) minChk.checked = false;
+    }
+  }
+
+  function applyAccentColors(cfg) {
+    var root = document.documentElement;
+    if (cfg.accent_color) {
+      root.style.setProperty('--accent', cfg.accent_color);
+      root.style.setProperty('--accent-hover', cfg.accent_color);
+      root.style.setProperty('--focus', cfg.accent_color);
+    }
+    if (cfg.bg_color) {
+      root.style.setProperty('--bg', cfg.bg_color);
     }
   }
 
@@ -827,6 +1155,15 @@
     if (grad) grad.hidden = !speedOn;
   }
 
+  function updateGlowOptionsUi() {
+    const glowOn = !!cfg.trail_glow;
+    const glowOpts = $("glow-options");
+    if (glowOpts) glowOpts.hidden = !glowOn;
+    const customColor = !!cfg.trail_glow_custom_color;
+    const colorField = $("glow-color-field");
+    if (colorField) colorField.hidden = !customColor;
+  }
+
   function coerce(el) {
     if (el.type === "checkbox") return el.checked;
     if (el.type === "range" || el.type === "number" || el.hasAttribute("data-num")) {
@@ -862,6 +1199,9 @@
   }
 
   function queuePatch(patch) {
+    if (!applyTimer) {
+      undoSnapshot = structuredClone(cfg);
+    }
     Object.assign(cfg, patch);
     if ("canvas_width" in patch || "canvas_height" in patch || "canvas_aspect" in patch) {
       maybeLockAspect(patch);
@@ -874,12 +1214,8 @@
         if (el.type === "checkbox") el.checked = !!patch[key];
         else if (el.type === "range") {
           el.value = patch[key];
-        } else if (el.type !== "color" || typeof patch[key] === "string") {
-          if (el.hasAttribute("data-color") && String(patch[key]).length > 7) {
-            el.value = String(patch[key]).slice(0, 7);
-          } else {
-            el.value = patch[key];
-          }
+        } else {
+          el.value = patch[key];
         }
       });
       document.querySelectorAll(`[data-link="${key}"]`).forEach((el) => {
@@ -902,6 +1238,7 @@
       updateViewModeUi();
     }
     if ("speed_colorize" in patch) updateTrailColorUi();
+    if ("trail_glow" in patch || "trail_glow_custom_color" in patch) updateGlowOptionsUi();
     if ("start_with_windows" in patch || "start_minimized" in patch) {
       if ("start_with_windows" in patch && !patch.start_with_windows) {
         cfg.start_minimized = false;
@@ -909,11 +1246,23 @@
       }
       updateStartupUi();
     }
+    if ("accent_color" in patch || "bg_color" in patch) {
+      applyAccentColors(cfg);
+    }
     const dirtyKeys = Object.keys(patch).filter((k) => !presetExclude.has(k));
     if (dirtyKeys.length) recomputePresetDirty();
 
     clearTimeout(applyTimer);
-    applyTimer = setTimeout(() => persist(patch), 80);
+    applyTimer = setTimeout(() => {
+      if (undoSnapshot) {
+        undoStack.push(undoSnapshot);
+        if (undoStack.length > MAX_UNDO) undoStack.shift();
+        redoStack.length = 0;
+        undoSnapshot = null;
+        updateUndoRedoButtons();
+      }
+      persist(patch);
+    }, 80);
   }
 
   function maybeLockAspect(patch) {
@@ -972,82 +1321,106 @@
 
   function renderPresetList() {
     if (!presetList) return;
-    presetList.innerHTML = "";
-    const activeName = cfg.active_preset || presetInfo.active || "";
-    const activeKind = cfg.active_preset_kind || presetInfo.active_kind || "builtin";
-    const users = presetInfo.user || [];
-    const builtins = presetInfo.builtin || [];
+    var activeName = cfg.active_preset || presetInfo.active || "";
+    var activeKind = cfg.active_preset_kind || presetInfo.active_kind || "builtin";
+    var users = presetInfo.user || [];
+    var builtins = presetInfo.builtin || [];
+    var hiddenPresets = cfg.hidden_presets || [];
 
-    function addGroup(key, label, items, defaultCollapsed) {
-      const group = document.createElement("div");
-      group.className = "preset-group";
-      const collapsed = getPresetGroupCollapsed(key, defaultCollapsed);
-      if (collapsed) group.classList.add("collapsed");
+    var html = "";
 
-      const head = document.createElement("button");
-      head.type = "button";
-      head.className = "preset-group-head";
-      head.setAttribute("aria-expanded", collapsed ? "false" : "true");
-      head.innerHTML =
-        '<span class="preset-group-chevron" aria-hidden="true"></span>' +
-        '<span class="preset-group-title"></span>' +
-        '<span class="preset-group-count"></span>';
-      head.querySelector(".preset-group-title").textContent = label;
-      head.querySelector(".preset-group-count").textContent = String(items.length);
-      head.addEventListener("click", () => {
-        const next = !group.classList.contains("collapsed");
-        group.classList.toggle("collapsed", next);
-        head.setAttribute("aria-expanded", next ? "false" : "true");
-        setPresetGroupCollapsed(key, next);
-      });
-      group.appendChild(head);
+    users.forEach(function (p) {
+      html += renderPresetItem(p.name, "user", activeName, activeKind);
+    });
 
-      const body = document.createElement("div");
-      body.className = "preset-group-body";
-
-      if (!items.length) {
-        const empty = document.createElement("div");
-        empty.className = "preset-empty";
-        empty.textContent =
-          key === "user" ? "No saved presets yet." : "No default presets.";
-        body.appendChild(empty);
-      } else {
-        items.forEach((p) => {
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "preset-item";
-          const isActive =
-            p.name === activeName &&
-            (p.kind === activeKind ||
-              (selectedPreset.name === p.name && selectedPreset.kind === p.kind));
-          const isSelected =
-            selectedPreset.name === p.name && selectedPreset.kind === p.kind;
-          if (isActive || isSelected) btn.classList.add("active");
-          btn.innerHTML =
-            '<span class="p-name"></span>' +
-            '<span class="p-badge"></span>';
-          const dirtyMark = isActive && presetDirty ? " *" : "";
-          btn.querySelector(".p-name").textContent = p.name + dirtyMark;
-          btn.querySelector(".p-badge").textContent = isActive ? "active" : "";
-          btn.addEventListener("click", () => applyPreset(p.name, p.kind));
-          body.appendChild(btn);
-        });
+    builtins.forEach(function (p) {
+      if (hiddenPresets.indexOf(p.name) === -1) {
+        html += renderPresetItem(p.name, "builtin", activeName, activeKind);
       }
+    });
 
-      group.appendChild(body);
-      presetList.appendChild(group);
+    if (!html) {
+      html = '<div class="preset-empty">No presets.</div>';
     }
 
-    addGroup("user", "Saved", users, false);
-    addGroup("defaults", "Defaults", builtins, users.length > 0);
+    presetList.innerHTML = html;
 
-    if (!users.length && !builtins.length) {
-      const empty = document.createElement("div");
-      empty.className = "preset-empty";
-      empty.textContent = "No presets.";
-      presetList.appendChild(empty);
-    }
+    presetList.querySelectorAll(".preset-item").forEach(function (el) {
+      el.addEventListener("click", function (e) {
+        if (e.target.closest(".preset-delete")) return;
+        applyPreset(el.dataset.preset, el.dataset.type);
+      });
+    });
+
+    presetList.querySelectorAll(".preset-delete").forEach(function (el) {
+      el.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var item = el.closest(".preset-item");
+        var name = item.dataset.preset;
+        var type = item.dataset.type;
+        if (type === "user") {
+          deletePresetByName(name);
+        } else {
+          hidePreset(name);
+        }
+      });
+    });
+
     updateDirtyUi();
+  }
+
+  function renderPresetItem(name, type, activeName, activeKind) {
+    var isActive = name === activeName && type === activeKind;
+    var cls = "preset-item" + (isActive ? " active" : "");
+    var badge = "";
+    if (isActive) {
+      badge = '<span class="preset-badge active-badge">active</span>';
+    } else if (type === "builtin") {
+      badge = '<span class="preset-badge default-badge">default</span>';
+    }
+    return (
+      '<div class="' + cls + '" data-preset="' + escapeHtml(name) + '" data-type="' + type + '">' +
+      '<span class="preset-name">' + escapeHtml(name) + (isActive && presetDirty ? " *" : "") + '</span>' +
+      badge +
+      '<button class="preset-delete" title="Remove">&times;</button>' +
+      '</div>'
+    );
+  }
+
+  function hidePreset(name) {
+    var hidden = cfg.hidden_presets || [];
+    if (hidden.indexOf(name) === -1) {
+      hidden = hidden.concat([name]);
+      queuePatch({ hidden_presets: hidden });
+      renderPresetList();
+    }
+  }
+
+  async function deletePresetByName(name) {
+    var ok = await confirmDialog('Delete "' + name + '"?', {
+      title: "Delete preset",
+      confirmText: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      var res = await api("/api/presets/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name }),
+      });
+      var data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || "delete");
+      if (data.data) cfg = data.data;
+      toast("Deleted " + name);
+      if (selectedPreset.name === name && selectedPreset.kind === "user") {
+        selectedPreset = { name: cfg.active_preset || "", kind: cfg.active_preset_kind || "builtin" };
+      }
+      await refreshPresets();
+      bindForm();
+    } catch (e) {
+      toast(String(e.message || e) || "Delete failed");
+    }
   }
 
   function applyExcludeKeys(keys) {
@@ -1099,7 +1472,6 @@
       if (data.data) cfg = data.data;
       bindForm();
       capturePresetBaseline();
-      loadPreview();
       if (!(opts && opts.silent)) toast(name);
       await refreshPresets();
     } catch (e) {
@@ -1108,16 +1480,19 @@
   }
 
   async function savePresetAs() {
-    let name = (presetNameInput.value || "").trim();
-    if (!name && presetDirty && selectedPreset.name) {
-      name = selectedPreset.name + " copy";
-      if (presetNameInput) presetNameInput.value = name;
+    let name = "";
+    if (presetDirty && selectedPreset.name) {
+      name = selectedPreset.kind === "builtin"
+        ? selectedPreset.name + " custom"
+        : selectedPreset.name + " copy";
     }
-    if (!name) {
-      toast("Enter a name");
-      presetNameInput.focus();
-      return;
-    }
+    name = await promptDialog("Name for new preset:", {
+      title: "Save preset",
+      value: name,
+      confirmText: "Save",
+    });
+    if (name == null) return;
+    if (!name) { toast("Enter a name"); return; }
     try {
       const res = await api("/api/presets/save", {
         method: "POST",
@@ -1136,7 +1511,6 @@
         };
       }
       selectedPreset = { name, kind: "user" };
-      presetNameInput.value = "";
       bindForm();
       capturePresetBaseline();
       toast("Saved " + name);
@@ -1166,78 +1540,6 @@
       await refreshPresets();
     } catch (e) {
       toast(String(e.message || e) || "Update failed");
-    }
-  }
-
-  async function deleteSelectedPreset() {
-    if (!selectedPreset.name || selectedPreset.kind !== "user") {
-      toast("Pick a saved preset first");
-      return;
-    }
-    const ok = await confirmDialog("Delete \"" + selectedPreset.name + "\"?", {
-      title: "Delete preset",
-      confirmText: "Delete",
-      danger: true,
-    });
-    if (!ok) return;
-    try {
-      const res = await api("/api/presets/delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: selectedPreset.name }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error || "delete");
-      if (data.data) cfg = data.data;
-      toast("Deleted " + selectedPreset.name);
-      selectedPreset = { name: cfg.active_preset || "", kind: cfg.active_preset_kind || "builtin" };
-      await refreshPresets();
-      bindForm();
-    } catch (e) {
-      toast(String(e.message || e) || "Delete failed");
-    }
-  }
-
-  async function renameSelectedPreset() {
-    if (!selectedPreset.name || selectedPreset.kind !== "user") {
-      toast("Pick a saved preset first");
-      return;
-    }
-    const newName = await promptDialog("New name for this preset:", {
-      title: "Rename preset",
-      value: selectedPreset.name,
-      confirmText: "Rename",
-    });
-    if (newName == null) return;
-    if (!newName) {
-      toast("Enter a name");
-      return;
-    }
-    if (newName === selectedPreset.name) return;
-    try {
-      const res = await api("/api/presets/rename", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ old_name: selectedPreset.name, new_name: newName }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error || "rename");
-      if (data.data) cfg = data.data;
-      selectedPreset = { name: newName, kind: "user" };
-      if (data.presets) {
-        presetInfo = {
-          builtin: data.presets.builtin || [],
-          user: data.presets.user || [],
-          active: data.presets.active || newName,
-          active_kind: data.presets.active_kind || "user",
-        };
-      }
-      bindForm();
-      capturePresetBaseline();
-      toast("Renamed to " + newName);
-      await refreshPresets();
-    } catch (e) {
-      toast(String(e.message || e) || "Rename failed");
     }
   }
 
@@ -1321,7 +1623,6 @@
       };
       bindForm();
       capturePresetBaseline();
-      loadPreview();
       await refreshPresets();
       toast("Preset imported");
     } catch (e) {
@@ -1361,7 +1662,6 @@
       if (input) input.value = "";
       bindForm();
       capturePresetBaseline();
-      loadPreview();
       await refreshPresets();
       toast("Preset imported");
     } catch (e) {
@@ -1376,7 +1676,8 @@
     if (cfg.view_mode === "wrap") cfg.view_mode = "infinite";
     await refreshPresets();
     previewMode = cfg.ui_preview_mode || "lite";
-    if (previewModeEl) previewModeEl.value = previewMode;
+    previewAuto = previewMode === "auto";
+    updatePreviewModeBtns();
     selectedPreset = {
       name: cfg.active_preset || "",
       kind: cfg.active_preset_kind || "builtin",
@@ -1385,8 +1686,10 @@
     if (section === "backup") section = "settings";
     showSection(section, false);
     bindForm();
+    applyAccentColors(cfg);
     capturePresetBaseline();
     loadPreview();
+    updateUndoRedoButtons();
     if (!cfg.ui_obs_setup_done) {
       showSection("obs", false);
     }
@@ -1460,7 +1763,6 @@
       };
       bindForm();
       capturePresetBaseline();
-      loadPreview();
       await refreshPresets();
       toast("Imported");
     } catch (e) {
@@ -1515,33 +1817,38 @@
   tipEl.id = "tip-float";
   document.body.appendChild(tipEl);
   let tipAnchor = null;
+  let tipTimer = null;
 
   function placeTip(el) {
     const text = el.getAttribute("data-tip");
     if (!text) return;
     tipAnchor = el;
     tipEl.textContent = text;
-    tipEl.classList.add("show");
     const r = el.getBoundingClientRect();
     const pad = 8;
     const tw = tipEl.offsetWidth || 200;
     const th = tipEl.offsetHeight || 40;
-    let left = r.right + pad;
-    let top = r.top + r.height / 2 - th / 2;
-    if (left + tw > window.innerWidth - pad) {
-      left = r.left - tw - pad;
+    let left = r.left + r.width / 2 - tw / 2;
+    let top = r.top - th - pad;
+    if (top < pad) {
+      top = r.bottom + pad;
     }
     if (left < pad) left = pad;
-    if (top < pad) top = pad;
+    if (left + tw > window.innerWidth - pad) {
+      left = window.innerWidth - tw - pad;
+    }
     if (top + th > window.innerHeight - pad) {
       top = window.innerHeight - th - pad;
     }
     tipEl.style.left = Math.round(left) + "px";
     tipEl.style.top = Math.round(top) + "px";
+    tipEl.classList.add("show");
   }
 
   function hideTip() {
     tipAnchor = null;
+    clearTimeout(tipTimer);
+    tipTimer = null;
     tipEl.classList.remove("show");
   }
 
@@ -1549,7 +1856,9 @@
     "mouseover",
     (e) => {
       const el = e.target.closest(".info[data-tip]");
-      if (el) placeTip(el);
+      if (!el) return;
+      clearTimeout(tipTimer);
+      tipTimer = setTimeout(() => placeTip(el), 300);
     },
     true
   );
@@ -1560,13 +1869,18 @@
       if (!el) return;
       const to = e.relatedTarget;
       if (to && el.contains(to)) return;
+      clearTimeout(tipTimer);
+      tipTimer = null;
       if (tipAnchor === el) hideTip();
     },
     true
   );
   document.addEventListener("focusin", (e) => {
     const el = e.target.closest && e.target.closest(".info[data-tip]");
-    if (el) placeTip(el);
+    if (!el) return;
+    clearTimeout(tipTimer);
+    tipTimer = null;
+    placeTip(el);
   });
   document.addEventListener("focusout", (e) => {
     const el = e.target.closest && e.target.closest(".info[data-tip]");
@@ -1685,7 +1999,14 @@
   }
 
   document.querySelectorAll(".sec-btn").forEach((btn) => {
-    btn.addEventListener("click", () => showSection(btn.dataset.section, true));
+    btn.addEventListener("click", () => {
+      if (searchInput && searchInput.value) {
+        searchInput.value = '';
+        filterSettings('');
+        if (searchClear) searchClear.hidden = true;
+      }
+      showSection(btn.dataset.section, true);
+    });
   });
 
   document.querySelectorAll(".feel-pill").forEach((btn) => {
@@ -1726,7 +2047,6 @@
       cfg = data.data || cfg;
       bindForm();
       capturePresetBaseline();
-      loadPreview();
       toast("Look reset");
     });
   }
@@ -1737,15 +2057,7 @@
       toast("OK");
     });
   }
-  if (btnDirtyUpdate) btnDirtyUpdate.addEventListener("click", updateSelectedPreset);
-  if (btnDirtySave) btnDirtySave.addEventListener("click", () => {
-    if (presetNameInput && !presetNameInput.value.trim() && selectedPreset.name) {
-      presetNameInput.value = selectedPreset.kind === "builtin"
-        ? selectedPreset.name + " custom"
-        : selectedPreset.name + " copy";
-    }
-    savePresetAs();
-  });
+  if (btnDirtySave) btnDirtySave.addEventListener("click", savePresetAs);
   if (btnDirtyDiscard) {
     btnDirtyDiscard.addEventListener("click", async () => {
       const name = selectedPreset.name || cfg.active_preset || "";
@@ -1759,11 +2071,26 @@
     });
   }
   $("btn-reload").addEventListener("click", loadPreview);
-  if (previewModeEl) {
-    previewModeEl.addEventListener("change", (e) => {
-      setPreviewMode(e.target.value, true);
+  if (frame) {
+    frame.addEventListener("load", onPreviewLoad);
+    frame.addEventListener("error", onPreviewError);
+  }
+  if (btnPreviewRetry) btnPreviewRetry.addEventListener("click", loadPreview);
+  if (btnUndo) btnUndo.addEventListener("click", undo);
+  if (btnRedo) btnRedo.addEventListener("click", redo);
+  if (previewModeBtns) {
+    previewModeBtns.querySelectorAll(".preview-mode-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        setPreviewMode(btn.dataset.mode, true);
+      });
     });
   }
+  window.addEventListener("focus", () => {
+    if (previewAuto) loadPreview();
+  });
+  window.addEventListener("blur", () => {
+    if (previewAuto) loadPreview();
+  });
   $("checker").addEventListener("change", (e) => {
     stage.classList.toggle("plain", !e.target.checked);
   });
@@ -1772,12 +2099,11 @@
   }
   window.addEventListener("resize", layoutPreviewCanvas);
 
-  $("btn-preset-save").addEventListener("click", savePresetAs);
-  $("btn-preset-update").addEventListener("click", updateSelectedPreset);
-  if ($("btn-preset-rename")) $("btn-preset-rename").addEventListener("click", renameSelectedPreset);
-  if ($("btn-preset-delete")) $("btn-preset-delete").addEventListener("click", deleteSelectedPreset);
   if ($("btn-preset-export")) $("btn-preset-export").addEventListener("click", exportSelectedPresetFile);
   if ($("btn-preset-copy")) $("btn-preset-copy").addEventListener("click", copySelectedPreset);
+  if ($("btn-preset-rename")) $("btn-preset-rename").addEventListener("click", renameSelectedPreset);
+  if ($("btn-preset-duplicate")) $("btn-preset-duplicate").addEventListener("click", duplicateSelectedPreset);
+  if (btnDirtyUpdate) btnDirtyUpdate.addEventListener("click", updateSelectedPreset);
   if ($("btn-preset-import")) $("btn-preset-import").addEventListener("click", importPresetFile);
   if ($("btn-preset-import-code")) $("btn-preset-import-code").addEventListener("click", importPresetFromCodeInput);
   const codeInput = $("preset-code-input");
@@ -1789,15 +2115,6 @@
       }
     });
   }
-  if (presetNameInput) {
-    presetNameInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        savePresetAs();
-      }
-    });
-  }
-
   $("btn-reset").addEventListener("click", async () => {
     const ok = await confirmDialog(
       "Reset all settings to defaults?\nAuth token is kept so your OBS URL still works.",
@@ -1813,7 +2130,6 @@
     };
     bindForm();
     capturePresetBaseline();
-    loadPreview();
     toast("Reset");
   });
 
@@ -1834,11 +2150,379 @@
     }, 700);
   });
 
+  const searchInput = document.getElementById('settings-search');
+  const searchClear = document.getElementById('search-clear');
+
+  if (searchInput) {
+    searchInput.addEventListener('keyup', function() {
+      var q = searchInput.value.trim();
+      if (q.length < 2 && q.length > 0) {
+        if (searchClear) searchClear.hidden = false;
+        return;
+      }
+      filterSettings(q);
+      if (searchClear) searchClear.hidden = q === '';
+    });
+
+    searchInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        searchInput.value = '';
+        filterSettings('');
+        if (searchClear) searchClear.hidden = true;
+        searchInput.blur();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        var visibleSection = document.querySelector('.block.sec:not([hidden])');
+        if (visibleSection) {
+          var firstField = visibleSection.querySelector('input:not([type="hidden"]):not([hidden]), select:not([hidden]), button:not([hidden])');
+          if (firstField) firstField.focus();
+        }
+      }
+    });
+  }
+
+  if (searchClear) {
+    searchClear.addEventListener('click', function() {
+      if (searchInput) {
+        searchInput.value = '';
+        filterSettings('');
+      }
+      searchClear.hidden = true;
+      searchInput.focus();
+    });
+  }
+
+  document.addEventListener('keydown', function(e) {
+    if (hotkeyListening) return;
+
+    if (e.ctrlKey && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+      if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
+      e.preventDefault();
+      undo();
+    } else if (e.ctrlKey && e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+      if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
+      e.preventDefault();
+      redo();
+    } else if (e.key === 'Escape') {
+      if (searchInput && document.activeElement === searchInput) {
+        searchInput.value = '';
+        filterSettings('');
+        if (searchClear) searchClear.hidden = true;
+        searchInput.blur();
+      }
+    }
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (!e.target.classList.contains('val-input')) return;
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      var step = parseFloat(e.target.step) || 1;
+      var val = parseFloat(e.target.value);
+      if (!Number.isFinite(val)) val = 0;
+      e.target.value = val + step;
+      e.target.dispatchEvent(new Event('input', { bubbles: true }));
+      e.target.dispatchEvent(new Event('change', { bubbles: true }));
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      var step = parseFloat(e.target.step) || 1;
+      var val = parseFloat(e.target.value);
+      if (!Number.isFinite(val)) val = 0;
+      e.target.value = val - step;
+      e.target.dispatchEvent(new Event('input', { bubbles: true }));
+      e.target.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  });
+
+  let onboardingStep = 0;
+  let onboardingSelectedPreset = null;
+
+  const ONBOARDING_PRESETS = [
+    { name: "16:9 pad", label: "Standard 16:9", desc: "Good for most streamers" },
+    { name: "Square HUD", label: "Square HUD", desc: "Compact, shows stats" },
+    { name: "Border only", label: "Border Only", desc: "Minimal, just the pad border" },
+    { name: "Corner mini", label: "Corner Mini", desc: "Small, in the corner" },
+  ];
+
+  const ONBOARDING_STEPS = [
+    {
+      title: "Welcome to Velo!",
+      desc: "Set up your mouse input overlay for OBS in a few simple steps.",
+      render: function () {
+        var url = overlayUrl();
+        return (
+          '<p>Velo captures your mouse movement and displays it as a smooth trail overlay. ' +
+          'Perfect for streaming, tutorials, and aim training.</p>' +
+          '<p><strong>1. Open OBS and add a Browser Source</strong></p>' +
+          '<p><strong>2. Set the URL to:</strong></p>' +
+          '<div class="onboarding-url">' + escapeHtml(url) + '</div>' +
+          '<p>Recommended size: <strong>' + (cfg.canvas_width || 640) + ' × ' + (cfg.canvas_height || 360) + '</strong></p>' +
+          '<p class="onboarding-tip">Turn off "Shutdown source when not visible" in OBS for best results.</p>'
+        );
+      },
+    },
+    {
+      title: 'Choose Your Colors',
+      desc: 'Pick colors that match your stream style.',
+      render: function () {
+        var trailColor = cfg.trail_color || '#888888';
+        var bgColor = cfg.pad_bg_color || '#1a1a1a';
+        var cursorColor = cfg.cursor_dot_color || '#ffffff';
+        return '<div class="onboarding-step-content">' +
+          '<div class="onboarding-color-row">' +
+          '<label>Trail Color</label>' +
+          '<input type="color" id="onboarding-trail-color" value="' + escapeHtml(trailColor) + '">' +
+          '</div>' +
+          '<div class="onboarding-color-row">' +
+          '<label>Background</label>' +
+          '<input type="color" id="onboarding-bg-color" value="' + escapeHtml(bgColor) + '">' +
+          '</div>' +
+          '<div class="onboarding-color-row">' +
+          '<label>Cursor</label>' +
+          '<input type="color" id="onboarding-cursor-color" value="' + escapeHtml(cursorColor) + '">' +
+          '</div>' +
+          '</div>';
+      },
+    },
+    {
+      title: "Choose a Starting Preset",
+      desc: "Pick a preset that matches your needs. You can customize everything later.",
+      render: function () {
+        var html = '<div class="onboarding-preset-grid">';
+        ONBOARDING_PRESETS.forEach(function (p) {
+          var sel = onboardingSelectedPreset === p.name ? " selected" : "";
+          html +=
+            '<div class="onboarding-preset-card' + sel + '" data-preset="' + escapeHtml(p.name) + '">' +
+            '<h4>' + escapeHtml(p.label) + '</h4>' +
+            '<p>' + escapeHtml(p.desc) + '</p>' +
+            '</div>';
+        });
+        html += '</div>';
+        return html;
+      },
+    },
+    {
+      title: "Quick Settings",
+      desc: "Adjust a few basic settings to get started.",
+      render: function () {
+        var sens = cfg.motion_scale != null ? Math.round(cfg.motion_scale * 10) / 10 : 1.0;
+        var trailOn = cfg.trail_enabled !== false;
+        var clicksOn = cfg.show_clicks !== false;
+        var hudOn = cfg.show_stats === true;
+        return (
+          '<div class="onboarding-quick-settings">' +
+          '<div class="onboarding-quick-setting">' +
+          '<label>Motion sensitivity</label>' +
+          '<input type="range" id="ob-sensitivity" min="0.1" max="3" step="0.1" value="' + sens + '" />' +
+          '<span class="onboarding-range-val" id="ob-sensitivity-val">' + sens + '</span>' +
+          '</div>' +
+          '<div class="onboarding-quick-setting">' +
+          '<label>Show trail</label>' +
+          '<label class="toggle"><input type="checkbox" id="ob-trail"' + (trailOn ? ' checked' : '') + ' /><span class="track"></span></label>' +
+          '</div>' +
+          '<div class="onboarding-quick-setting">' +
+          '<label>Click effects</label>' +
+          '<label class="toggle"><input type="checkbox" id="ob-clicks"' + (clicksOn ? ' checked' : '') + ' /><span class="track"></span></label>' +
+          '</div>' +
+          '<div class="onboarding-quick-setting">' +
+          '<label>Show HUD</label>' +
+          '<label class="toggle"><input type="checkbox" id="ob-hud"' + (hudOn ? ' checked' : '') + ' /><span class="track"></span></label>' +
+          '</div>' +
+          '</div>'
+        );
+      },
+    },
+    {
+      title: "You're All Set!",
+      desc: "Your overlay is ready to use. Here's what to do next:",
+      render: function () {
+        return (
+          '<div class="onboarding-done-list">' +
+          '<div class="onboarding-done-item"><span class="onboarding-check">✓</span> Go to OBS and see your overlay</div>' +
+          '<div class="onboarding-done-item"><span class="onboarding-check">✓</span> Right-click the tray icon for quick options</div>' +
+          '<div class="onboarding-done-item"><span class="onboarding-check">✓</span> Come back here anytime to tweak settings</div>' +
+          '</div>' +
+          '<p class="onboarding-tip">Tip: Press <strong>Ctrl+H</strong> to reset HUD stats</p>'
+        );
+      },
+    },
+  ];
+
+  function escapeHtml(str) {
+    var div = document.createElement("div");
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+  }
+
+  function showOnboarding() {
+    onboardingStep = 0;
+    onboardingSelectedPreset = null;
+    var overlay = $("onboarding-overlay");
+    if (overlay) overlay.hidden = false;
+    renderOnboardingStep(0);
+    bindOnboardingEvents();
+  }
+
+  function renderOnboardingStep(step) {
+    var content = $("onboarding-content");
+    var title = $("onboarding-title");
+    var desc = $("onboarding-desc");
+    var backBtn = $("onboarding-back");
+    var nextBtn = $("onboarding-next");
+    var finishBtn = $("onboarding-finish");
+    var stepsContainer = $("onboarding-steps");
+
+    if (!content) return;
+
+    var s = ONBOARDING_STEPS[step];
+    if (!s) return;
+
+    if (title) title.textContent = s.title;
+    if (desc) desc.textContent = s.desc;
+
+    content.classList.add("fade");
+    setTimeout(function () {
+      content.innerHTML = s.render();
+      content.classList.remove("fade");
+
+      if (step === 2) {
+        content.querySelectorAll(".onboarding-preset-card").forEach(function (card) {
+          card.addEventListener("click", function () {
+            content.querySelectorAll(".onboarding-preset-card").forEach(function (c) {
+              c.classList.remove("selected");
+            });
+            card.classList.add("selected");
+            onboardingSelectedPreset = card.getAttribute("data-preset");
+          });
+        });
+      }
+
+      if (step === 3) {
+        var sensSlider = $("ob-sensitivity");
+        var sensVal = $("ob-sensitivity-val");
+        if (sensSlider && sensVal) {
+          sensSlider.addEventListener("input", function () {
+            sensVal.textContent = parseFloat(sensSlider.value).toFixed(1);
+          });
+        }
+      }
+    }, 100);
+
+    if (stepsContainer) {
+      stepsContainer.querySelectorAll(".onboarding-step").forEach(function (el) {
+        var s = parseInt(el.getAttribute("data-step"), 10);
+        el.classList.remove("active", "done");
+        if (s === step) el.classList.add("active");
+        else if (s < step) el.classList.add("done");
+      });
+    }
+
+    if (backBtn) backBtn.hidden = step === 0;
+    if (nextBtn) nextBtn.hidden = step === 4;
+    if (finishBtn) finishBtn.hidden = step !== 4;
+  }
+
+  function nextStep() {
+    if (onboardingStep === 1) {
+      var trailColor = $("onboarding-trail-color");
+      var bgColor = $("onboarding-bg-color");
+      var cursorColor = $("onboarding-cursor-color");
+      var patch = {};
+      if (trailColor) patch.trail_color = trailColor.value;
+      if (bgColor) patch.pad_bg_color = bgColor.value;
+      if (cursorColor) patch.cursor_dot_color = cursorColor.value;
+      if (Object.keys(patch).length) queuePatch(patch);
+    }
+    if (onboardingStep === 2 && onboardingSelectedPreset) {
+      applyPreset(onboardingSelectedPreset, "builtin", { silent: true });
+    }
+    if (onboardingStep === 3) {
+      var sensSlider = $("ob-sensitivity");
+      var trailChk = $("ob-trail");
+      var clicksChk = $("ob-clicks");
+      var hudChk = $("ob-hud");
+      var patch = {};
+      if (sensSlider) patch.motion_scale = parseFloat(sensSlider.value);
+      if (trailChk) patch.trail_enabled = trailChk.checked;
+      if (clicksChk) patch.show_clicks = clicksChk.checked;
+      if (hudChk) patch.show_stats = hudChk.checked;
+      if (Object.keys(patch).length) queuePatch(patch);
+    }
+    if (onboardingStep < 4) {
+      onboardingStep++;
+      renderOnboardingStep(onboardingStep);
+    }
+  }
+
+  function prevStep() {
+    if (onboardingStep > 0) {
+      onboardingStep--;
+      renderOnboardingStep(onboardingStep);
+    }
+  }
+
+  async function finishOnboarding() {
+    var dontShow = $("onboarding-dont-show");
+    if (dontShow && dontShow.checked) {
+      try {
+        await api("/api/onboarding/dismiss", { method: "POST" });
+      } catch (_) {}
+    }
+    var overlay = $("onboarding-overlay");
+    if (overlay) overlay.hidden = true;
+  }
+
+  function bindOnboardingEvents() {
+    var nextBtn = $("onboarding-next");
+    var backBtn = $("onboarding-back");
+    var skipBtn = $("onboarding-skip");
+    var finishBtn = $("onboarding-finish");
+    var backdrop = $("onboarding-backdrop");
+
+    if (nextBtn) {
+      var newNext = nextBtn.cloneNode(true);
+      nextBtn.parentNode.replaceChild(newNext, nextBtn);
+      newNext.addEventListener("click", nextStep);
+    }
+    if (backBtn) {
+      var newBack = backBtn.cloneNode(true);
+      backBtn.parentNode.replaceChild(newBack, backBtn);
+      newBack.addEventListener("click", prevStep);
+    }
+    if (skipBtn) {
+      var newSkip = skipBtn.cloneNode(true);
+      skipBtn.parentNode.replaceChild(newSkip, skipBtn);
+      newSkip.addEventListener("click", finishOnboarding);
+    }
+    if (finishBtn) {
+      var newFinish = finishBtn.cloneNode(true);
+      finishBtn.parentNode.replaceChild(newFinish, finishBtn);
+      newFinish.addEventListener("click", finishOnboarding);
+    }
+    if (backdrop) {
+      var newBackdrop = backdrop.cloneNode(true);
+      backdrop.parentNode.replaceChild(newBackdrop, backdrop);
+      newBackdrop.addEventListener("click", finishOnboarding);
+    }
+  }
+
+  async function checkOnboarding() {
+    try {
+      var resp = await fetch("/api/onboarding");
+      var data = await resp.json();
+      if (data.show) {
+        showOnboarding();
+      }
+    } catch (_) {}
+  }
+
   Promise.all([loadConfig()])
     .then(() => {
+      initInlineRename();
       statusEl.textContent = "Online";
       poll();
       setInterval(poll, 2500);
+      checkOnboarding();
     })
     .catch((e) => {
       statusEl.textContent = "Failed to load";

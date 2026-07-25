@@ -11,15 +11,13 @@ import time
 from ctypes import wintypes
 from typing import Callable, Optional, Tuple
 
+from velo.constants import HC_ACTION, HOTKEY_DEBOUNCE, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN
+
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
-WH_KEYBOARD_LL = 13
-WM_KEYDOWN = 0x0100
-WM_SYSKEYDOWN = 0x0104
 WM_KEYUP = 0x0101
 WM_SYSKEYUP = 0x0105
-HC_ACTION = 0
 
 LLKHF_UP = 0x80
 
@@ -326,7 +324,7 @@ class GlobalHotkeys:
         if not self._matches(vk_code):
             return
         now = time.perf_counter()
-        if now - self._last_fire < 0.25:
+        if now - self._last_fire < HOTKEY_DEBOUNCE:
             return
         self._last_fire = now
         with self._lock:
@@ -340,7 +338,7 @@ class GlobalHotkeys:
 
         @LowLevelKeyboardProc
         def _proc(nCode, wParam, lParam):
-            # Keep the hook callback minimal; never raise into the OS chain.
+            # Keep the hook callback minimal; never raise into the OS chain
             if nCode == HC_ACTION and wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
                 try:
                     kb = ctypes.cast(lParam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents

@@ -5,19 +5,17 @@ from __future__ import annotations
 import ctypes
 from ctypes import wintypes
 
+from velo.constants import MOUSE_MOVE_RELATIVE, RIDEV_INPUTSINK, WM_INPUT
+
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
-WM_INPUT = 0x00FF
 WM_DESTROY = 0x0002
 WM_CLOSE = 0x0010
 WM_QUIT = 0x0012
 
-RIDEV_INPUTSINK = 0x00000100
 RID_INPUT = 0x10000003
 RIM_TYPEMOUSE = 0
-
-MOUSE_MOVE_RELATIVE = 0x00
 RI_MOUSE_LEFT_BUTTON_DOWN = 0x0001
 RI_MOUSE_LEFT_BUTTON_UP = 0x0002
 RI_MOUSE_RIGHT_BUTTON_DOWN = 0x0004

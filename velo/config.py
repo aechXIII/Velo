@@ -13,15 +13,19 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from velo.config_types import ConfigMap
+from velo.constants import MAX_PRESET_NAME_LENGTH
 from velo.defaults import (
     APP_NAME,
     APP_VERSION,
     DEFAULTS,
     FEEL_PRESETS,
     PRESET_CLIP_PREFIX,
+    PRESET_CLIP_PREFIX_V2,
     PRESET_EXCLUDE,
     PRESETS,
     QUALITY_PRESETS,
+    REVERSE_SHARE_ALIASES,
+    SHARE_ALIASES,
     SHELL_KEYS,
 )
 
@@ -31,9 +35,12 @@ __all__ = [
     "DEFAULTS",
     "FEEL_PRESETS",
     "PRESET_CLIP_PREFIX",
+    "PRESET_CLIP_PREFIX_V2",
     "PRESET_EXCLUDE",
     "PRESETS",
     "QUALITY_PRESETS",
+    "REVERSE_SHARE_ALIASES",
+    "SHARE_ALIASES",
     "SHELL_KEYS",
     "ConfigMap",
     "ConfigStore",
@@ -83,7 +90,7 @@ def _preset_stem(name: str) -> str:
     stem = "_".join(safe.split())
     stem = "".join(c if c.isalnum() or c in ("_", "-", ".") else "_" for c in stem)
     stem = stem.strip("._") or "preset"
-    return stem[:64]
+    return stem[:MAX_PRESET_NAME_LENGTH]
 
 
 def _preset_file_for_name(name: str, directory: Optional[Path] = None) -> Path:
@@ -106,6 +113,7 @@ class ConfigStore:
         self._listeners: List[Callable[[Dict[str, Any]], None]] = []
         self.load()
         self._load_user_presets()
+        self._last_active = ("", "builtin")
 
     def load(self) -> None:
         with self._lock:
@@ -383,6 +391,7 @@ class ConfigStore:
             clean = {
                 k: v for k, v in patch.items() if k in DEFAULTS and k not in PRESET_EXCLUDE
             }
+            self._last_active = (self._data.get("active_preset", ""), self._data.get("active_preset_kind", "builtin"))
             clean["active_preset"] = name
             clean["active_preset_kind"] = resolved or "builtin"
         return self.update(clean, persist=True)
@@ -397,6 +406,7 @@ class ConfigStore:
                 raise ValueError("preset already exists")
             body = {k: v for k, v in self.preset_snapshot().items() if k in DEFAULTS}
             self._write_preset_file_unlocked(name, body)
+            self._last_active = (self._data.get("active_preset", ""), self._data.get("active_preset_kind", "builtin"))
             self._data["active_preset"] = name
             self._data["active_preset_kind"] = "user"
             self._write_unlocked()
@@ -423,8 +433,13 @@ class ConfigStore:
                 self._data.get("active_preset") == name
                 and self._data.get("active_preset_kind") == "user"
             ):
-                self._data["active_preset"] = ""
-                self._data["active_preset_kind"] = "builtin"
+                last_name, last_kind = self._last_active
+                if last_kind == "user" and last_name and last_name in self._user_presets:
+                    self._data["active_preset"] = last_name
+                    self._data["active_preset_kind"] = "user"
+                else:
+                    self._data["active_preset"] = ""
+                    self._data["active_preset_kind"] = "builtin"
                 self._write_unlocked()
             snap = deepcopy(self._data)
         self._emit(snap)
@@ -498,19 +513,72 @@ class ConfigStore:
         }
 
     def encode_preset_share(self, name: str, kind: Optional[str] = None) -> str:
-        payload = self.export_preset_payload(name, kind)
-        raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode("ascii")
-        token = base64.urlsafe_b64encode(zlib.compress(raw, 9)).decode("ascii")
-        return PRESET_CLIP_PREFIX + token
+        return self.encode_preset_share_v2(name, kind)
+
+    def encode_preset_share_v2(self, name: str, kind: Optional[str] = None) -> str:
+        """Encode a preset as a compact VELO2 share code.
+
+        Builds a JSON object of alias:value pairs for keys that differ
+        from defaults, then zlib-compresses and base64url-encodes it.
+        """
+        resolved, settings = self.get_preset_settings(name, kind)
+        defaults = DEFAULTS
+        obj: Dict[str, Any] = {"v": 1, "n": name}
+
+        flat: Dict[str, Any] = {}
+        for k, v in settings.items():
+            if isinstance(v, dict):
+                for sk, sv in v.items():
+                    flat[f"{k}|{sk}"] = sv
+            else:
+                flat[k] = v
+
+        for key, value in flat.items():
+            if key in PRESET_EXCLUDE:
+                continue
+            if "|" in key:
+                parent, sub = key.split("|", 1)
+                default_parent = defaults.get(parent)
+                if isinstance(default_parent, dict) and sub in default_parent and value == default_parent[sub]:
+                    continue
+            else:
+                if key in defaults and value == defaults[key]:
+                    continue
+
+            alias = SHARE_ALIASES.get(key)
+            if alias is None:
+                if "|" in key:
+                    parent_flat, sub_flat = key.split("|", 1)
+                    alias = parent_flat + "." + sub_flat
+                else:
+                    alias = key
+
+            # Convert speed_stops to compact array format [[t, color], ...]
+            if key == "speed_stops" and isinstance(value, list):
+                value = [[s["t"], s["color"]] for s in value]
+
+            obj[str(alias)] = value
+
+        raw = json.dumps(obj, separators=(",", ":")).encode("utf-8")
+        compressed = zlib.compress(raw)
+        payload = base64.urlsafe_b64encode(compressed).decode("ascii").rstrip("=")
+        return PRESET_CLIP_PREFIX_V2 + payload
 
     def decode_preset_share(self, text: str) -> Dict[str, Any]:
         s = str(text or "").strip().strip("\ufeff")
         if not s:
             raise ValueError("empty preset data")
         first = s.splitlines()[0].strip()
+
+        if first.startswith(PRESET_CLIP_PREFIX_V2):
+            body = first[len(PRESET_CLIP_PREFIX_V2):].strip()
+            if not body:
+                raise ValueError("empty preset code")
+            return self._decode_share_v2(body)
+
         data: Any
         if first.startswith(PRESET_CLIP_PREFIX) or s.startswith(PRESET_CLIP_PREFIX):
-            blob = first[len(PRESET_CLIP_PREFIX) :].strip() if first.startswith(PRESET_CLIP_PREFIX) else s[len(PRESET_CLIP_PREFIX) :].strip()
+            blob = first[len(PRESET_CLIP_PREFIX):].strip() if first.startswith(PRESET_CLIP_PREFIX) else s[len(PRESET_CLIP_PREFIX):].strip()
             blob = "".join(blob.split())
             try:
                 pad = "=" * (-len(blob) % 4)
@@ -545,6 +613,63 @@ class ConfigStore:
         except ValueError:
             name = "Imported"
         return {"name": name, "settings": clean}
+
+    def _decode_share_v2(self, body: str) -> Dict[str, Any]:
+        """Decode a compressed VELO2 share code into preset data."""
+        try:
+            padded = body + "=" * (-len(body) % 4)
+            raw = zlib.decompress(base64.urlsafe_b64decode(padded))
+            data = json.loads(raw.decode("utf-8"))
+        except (ValueError, TypeError, zlib.error, binascii.Error, json.JSONDecodeError) as exc:
+            raise ValueError("invalid preset code") from exc
+
+        if not isinstance(data, dict):
+            raise ValueError("invalid preset data")
+
+        settings: Dict[str, Any] = {}
+
+        for alias, value in data.items():
+            if alias == "v":
+                continue  # schema version, not a config key
+
+            full_key = REVERSE_SHARE_ALIASES.get(alias)
+            if full_key is None:
+                if "." in alias:
+                    full_key = alias
+                else:
+                    continue  # unknown alias, skip for forward compat
+
+            # Reconstruct speed_stops from compact array format
+            if full_key == "speed_stops" and isinstance(value, list):
+                value = [{"t": s[0], "color": s[1]} for s in value]
+
+            # Reconstruct nested dicts from flat keys
+            if isinstance(full_key, str) and "|" in full_key:
+                parent, sub = full_key.split("|", 1)
+                if parent not in settings:
+                    settings[parent] = {}
+                settings[parent][sub] = value
+            else:
+                settings[full_key] = value
+
+        # Fill missing keys with defaults
+        for k, v in DEFAULTS.items():
+            if k not in settings:
+                if isinstance(v, dict):
+                    merged = deepcopy(v)
+                    if k in settings:
+                        merged.update(settings[k])
+                    settings[k] = merged
+                else:
+                    settings[k] = deepcopy(v)
+
+        if not settings:
+            raise ValueError("no recognized preset settings")
+
+        preset_name = str(data.get("n", "Imported")).strip()
+        if not preset_name:
+            preset_name = "Imported"
+        return {"name": preset_name, "settings": settings}
 
     def import_preset_payload(
         self,
@@ -671,7 +796,7 @@ class ConfigStore:
             try:
                 cb(snap)
             except Exception:
-                # Listeners (server/pipeline/shell) must not break config writes.
+                # Listeners (server/pipeline/shell) must not break config writes
                 continue
 
     def overlay_public(self) -> Dict[str, Any]:

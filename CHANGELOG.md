@@ -1,5 +1,30 @@
 # Changelog
 
+## [2.0.0] - 2026-07-25
+
+### Added
+- Settings search bar
+- Keyboard navigation
+- Customizable accent and background colors
+- Undo/redo for config changes
+- Average speed toggle to HUD
+- Live preview loading and error states
+- Active preset menu
+- Preset rename on double-click
+- Toast notifications
+- Onboarding wizard
+- Glow customization - opacity, width, custom color
+- Auto preview mode - turns off when unfocused, Live when focused
+
+### Changed
+- UI overhaul - toggle switches, new theme, redesigned preset toolbar, preview bar, app footer, import section
+- Improved tooltips
+- Preset share codes (VELO2) - shorter format
+
+### Fixed
+- Window not focusing
+- Trail glow using wrong speed color on fade
+
 ## [1.2.0] - 2026-07-25
 
 - Add Sensitivity and View zoom sliders to Motion

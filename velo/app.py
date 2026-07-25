@@ -14,12 +14,16 @@ from velo import __version__
 from velo import autostart
 from velo import single_instance
 from velo.config import APP_NAME, ConfigStore
+from velo.constants import INSTALLER_DELAY, UPDATE_CHECK_DELAY
 from velo.hotkeys import GlobalHotkeys
+from velo.logging import get_logger
 from velo.mouse_capture import MouseCapture
 from velo.pipeline import EventPipeline
 from velo.server import VeloServer
 from velo.tray import TrayApp
 from velo.updates import UpdateService, launch_installer
+
+logger = get_logger()
 
 
 def _win_message(title: str, text: str, *, error: bool = False) -> None:
@@ -29,7 +33,7 @@ def _win_message(title: str, text: str, *, error: bool = False) -> None:
         flags = 0x10 if error else 0x40
         ctypes.windll.user32.MessageBoxW(None, text, title, flags)
     except Exception:
-        print(f"[{title}] {text}", file=sys.stderr)
+        logger.error("[%s] %s", title, text)
 
 
 def check_dependencies() -> Optional[str]:
@@ -107,24 +111,24 @@ class VeloApp:
         if not self.server.running:
             err = self.server.last_error or "unknown bind error"
             self._startup_error = err
-            print(f"[Velo] Server failed to start: {err}", file=sys.stderr)
+            logger.error("Server failed to start: %s", err)
 
         try:
             self.pipeline.start()
         except Exception as exc:
             self._startup_error = (self._startup_error or "") + f"\nCapture: {exc}"
-            print(f"[Velo] Capture failed: {exc}", file=sys.stderr)
+            logger.error("Capture failed: %s", exc)
 
         try:
             self.hotkeys.start()
             self._apply_hotkeys(force=True)
         except Exception as exc:
-            print(f"[Velo] Hotkeys failed: {exc}", file=sys.stderr)
+            logger.error("Hotkeys failed: %s", exc)
 
         try:
             self._apply_autostart(force=True)
         except Exception as exc:
-            print(f"[Velo] Autostart failed: {exc}", file=sys.stderr)
+            logger.error("Autostart failed: %s", exc)
 
         self.config.on_change(self._on_config_shell)
 
@@ -132,9 +136,9 @@ class VeloApp:
         self.tray.start()
         self._refresh_update_tray()
 
-        print(f"[Velo] {__version__} ready")
-        print(f"[Velo] Overlay: {self.config.overlay_url()}")
-        print(f"[Velo] Config:  {self.config.config_url()}")
+        logger.info("%s ready", __version__)
+        logger.info("Overlay: %s", self.config.overlay_url())
+        logger.info("Config:  %s", self.config.config_url())
 
         if not self.server.running:
             self.tray.notify("Velo server failed", self.server.last_error or "Could not bind port")
@@ -148,11 +152,11 @@ class VeloApp:
             )
         elif self.capture.last_error:
             self.tray.notify("Velo capture issue", self.capture.last_error)
-            print(f"[Velo] Capture: {self.capture.last_error}", file=sys.stderr)
+            logger.error("Capture: %s", self.capture.last_error)
         elif not self.capture.running:
             msg = "Mouse capture did not start."
             self.tray.notify("Velo capture issue", msg)
-            print(f"[Velo] {msg}", file=sys.stderr)
+            logger.error("%s", msg)
 
         snap = self.config.snapshot()
         # Tray-only when Autostart + Minimized; otherwise open settings
@@ -210,6 +214,25 @@ class VeloApp:
                     win.restore()
                 if hasattr(win, "show"):
                     win.show()
+                # Bring window to foreground on Windows
+                try:
+                    import win32gui
+                    import win32con
+                    import win32process
+                    import win32api
+                    hwnd = win32gui.FindWindow(None, "Velo")
+                    if hwnd:
+                        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                        foreground = win32gui.GetForegroundWindow()
+                        if foreground:
+                            fg_tid = win32process.GetWindowThreadProcessId(foreground)[0]
+                            my_tid = win32api.GetCurrentThreadId()
+                            win32process.AttachThreadInput(my_tid, fg_tid, True)
+                        win32gui.SetForegroundWindow(hwnd)
+                        if foreground:
+                            win32process.AttachThreadInput(my_tid, fg_tid, False)
+                except ImportError:
+                    pass
                 return
             except (OSError, RuntimeError, AttributeError):
                 pass
@@ -400,7 +423,7 @@ class VeloApp:
                 on_done=lambda _s: self._refresh_update_tray(),
             )
 
-        threading.Timer(4.0, _later).start()
+        threading.Timer(UPDATE_CHECK_DELAY, _later).start()
 
     def _on_update_available(self, status: Dict[str, Any]) -> None:
         if self._stopping:
@@ -435,16 +458,16 @@ class VeloApp:
         if self._stopping:
             return
         self._pending_installer = Path(setup_path)
-        print(f"[Velo] Starting installer: {setup_path}", file=sys.stderr)
+        logger.info("Starting installer: %s", setup_path)
         try:
             launch_installer(Path(setup_path))
         except Exception as exc:
-            print(f"[Velo] Could not start installer: {exc}", file=sys.stderr)
+            logger.error("Could not start installer: %s", exc)
             self.updates.fail_install(str(exc))
             self.tray.notify("Velo update failed", str(exc))
             return
         self.tray.notify("Velo", "Installer started. Closing Velo.")
-        threading.Timer(0.6, self._request_quit).start()
+        threading.Timer(INSTALLER_DELAY, self._request_quit).start()
 
     def restart_server(self) -> None:
         try:
@@ -480,7 +503,7 @@ class VeloApp:
             return
         err = autostart.set_enabled(enabled)
         if err:
-            print(f"[Velo] Autostart: {err}", file=sys.stderr)
+            logger.error("Autostart: %s", err)
             return
         self._autostart_enabled = enabled
 
@@ -500,11 +523,11 @@ class VeloApp:
 
         label = self.hotkeys.set_hotkey(spec, _on_reset)
         if spec and label:
-            print(f"[Velo] HUD reset hotkey: {label}", file=sys.stderr)
+            logger.info("HUD reset hotkey: %s", label)
         elif spec and not label and self.hotkeys.last_error:
-            print(f"[Velo] {self.hotkeys.last_error}", file=sys.stderr)
+            logger.error("%s", self.hotkeys.last_error)
         elif not spec:
-            print("[Velo] HUD reset hotkey: off", file=sys.stderr)
+            logger.info("HUD reset hotkey: off")
 
     def shutdown(self) -> None:
         self._stopping = True
@@ -523,10 +546,10 @@ class VeloApp:
 
 
 def main() -> None:
-    print(f"[Velo] starting {__version__}")
+    logger.info("starting %s", __version__)
     dep_err = check_dependencies()
     if dep_err:
-        print(dep_err, file=sys.stderr)
+        logger.error(dep_err)
         _win_message("Velo - setup needed", dep_err, error=True)
         raise SystemExit(1)
 
@@ -536,11 +559,11 @@ def main() -> None:
             handed_off = single_instance.request_show_settings(cfg)
         except Exception as exc:
             handed_off = False
-            print(f"[Velo] Could not contact running instance: {exc}", file=sys.stderr)
+            logger.error("Could not contact running instance: %s", exc)
         if handed_off:
-            print("[Velo] Already running — opened Settings in the existing instance")
+            logger.info("Already running — opened Settings in the existing instance")
         else:
-            print("[Velo] Already running", file=sys.stderr)
+            logger.error("Already running")
             _win_message(
                 "Velo",
                 "Velo is already running.\n\nUse the tray icon to open Settings.",
@@ -553,7 +576,7 @@ def main() -> None:
     except SystemExit:
         raise
     except Exception as exc:
-        print(f"[Velo] fatal: {exc}", file=sys.stderr)
+        logger.error("fatal: %s", exc)
         _win_message("Velo - failed to start", str(exc), error=True)
         raise SystemExit(1)
 

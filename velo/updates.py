@@ -13,14 +13,15 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from velo.config import config_dir
+from velo.constants import CHECK_INTERVAL_DAYS, RELEASE_NOTES_MAX_LENGTH, REMIND_LATER_HOURS
 from velo.defaults import APP_NAME, APP_VERSION
 
 GITHUB_OWNER = "aechXIII"
 GITHUB_REPO = "Velo"
 GITHUB_API = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases"
 USER_AGENT = f"{APP_NAME}-Updater/{APP_VERSION}"
-CHECK_INTERVAL_S = 24 * 3600
-REMIND_LATER_S = 24 * 3600
+CHECK_INTERVAL_S = CHECK_INTERVAL_DAYS * 24 * 3600
+REMIND_LATER_S = REMIND_LATER_HOURS * 3600
 SETUP_ASSET_RE = re.compile(r"^Velo-Setup-.*\.exe$", re.IGNORECASE)
 
 OnAvailableCallback = Callable[[Dict[str, Any]], None]
@@ -457,8 +458,8 @@ class UpdateService:
             else:
                 parts.append(f"[{rel.version}]\n\n(No release notes)")
         text = "\n\n".join(parts).strip()
-        if len(text) > 8000:
-            text = text[:8000].rstrip() + "\n\n..."
+        if len(text) > RELEASE_NOTES_MAX_LENGTH:
+            text = text[:RELEASE_NOTES_MAX_LENGTH].rstrip() + "\n\n..."
         return text
 
     def _download_setup(self, pending: Dict[str, Any]) -> Path:

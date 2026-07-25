@@ -1,4 +1,4 @@
-/* Velo overlay (OBS browser source) */
+
 
 *,
 *::before,
@@ -193,6 +193,24 @@ body {
 
 .stats.hidden {
   display: none;
+}
+
+.stats.draggable {
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.stats.draggable::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 11px;
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  pointer-events: none;
+}
+
+.stats.dragging {
+  cursor: grabbing;
 }
 
 .stats.no-bg {

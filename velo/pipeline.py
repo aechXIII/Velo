@@ -9,7 +9,15 @@ import time
 from typing import Any, Dict, Optional
 
 from velo.config import ConfigStore
+from velo.constants import (
+    IDLE_DECAY_FACTOR,
+    IDLE_THRESHOLD,
+    MIN_MOVE_DISTANCE,
+    SMOOTHING_WEIGHT_NEW,
+    SMOOTHING_WEIGHT_OLD,
+)
 from velo.defaults import STATS_UPDATE_HZ
+from velo.error_handling import safe_thread
 from velo.mouse_capture import MouseCapture, MouseEvent
 from velo.server import VeloServer
 
@@ -49,7 +57,7 @@ class EventPipeline:
         self._acc_buttons = 0
         self._has_pending_move = False
         self._min_move_interval = 1.0 / 120.0
-        self._stats_interval = 0.25
+        self._stats_interval = IDLE_THRESHOLD
 
     def start(self) -> None:
         self.capture.add_listener(self._enqueue_mouse)
@@ -121,6 +129,7 @@ class EventPipeline:
     def _enqueue_mouse(self, ev: MouseEvent) -> None:
         self._ev_q.put_nowait(ev)
 
+    @safe_thread("event")
     def _event_loop(self) -> None:
         while not self._stop.is_set():
             try:
@@ -149,7 +158,7 @@ class EventPipeline:
                     if dt > 1e-6:
                         speed = dist / dt
                         prev = self._stats["speed"]
-                        self._stats["speed"] = prev * 0.65 + speed * 0.35
+                        self._stats["speed"] = prev * SMOOTHING_WEIGHT_NEW + speed * SMOOTHING_WEIGHT_OLD
                         if speed > self._stats["peak_speed"]:
                             self._stats["peak_speed"] = speed
                 self._last_t = now
@@ -232,18 +241,20 @@ class EventPipeline:
             payload["buttons"] = buttons
         self.server.broadcast_mouse(payload)
 
+    @safe_thread("drain")
     def _move_drain_loop(self) -> None:
         while not self._stop.is_set():
             self._flush_pending_move(force=False)
             self._stop.wait(self._min_move_interval)
 
+    @safe_thread("stats")
     def _stats_loop(self) -> None:
         while not self._stop.is_set():
-            interval = max(0.03, float(self._stats_interval or 0.25))
+            interval = max(MIN_MOVE_DISTANCE, float(self._stats_interval or IDLE_THRESHOLD))
             if self._stop.wait(interval):
                 break
             with self._lock:
-                if self._last_t is not None and (time.perf_counter() - self._last_t) > 0.12:
+                if self._last_t is not None and (time.perf_counter() - self._last_t) > IDLE_DECAY_FACTOR:
                     self._stats["speed"] *= 0.5
                     if self._stats["speed"] < 1:
                         self._stats["speed"] = 0.0

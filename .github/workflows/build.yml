@@ -1,6 +1,5 @@
-name: Build
+name: Test & Build
 
-# Smoke-build the Windows EXE on every push/PR (no release upload)
 on:
   push:
     branches: [main]
@@ -8,7 +7,31 @@ on:
     branches: [main]
 
 jobs:
+  test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python.exe -m pip install --upgrade pip
+          .venv\Scripts\python.exe -m pip install -r requirements.txt
+          .venv\Scripts\python.exe -m pip install pytest pytest-asyncio
+
+      - name: Run tests
+        run: |
+          .venv\Scripts\python.exe -m pytest tests/ -v --tb=short
+
   build:
+    needs: test
     runs-on: windows-latest
 
     steps:

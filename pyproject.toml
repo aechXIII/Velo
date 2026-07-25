@@ -1,6 +1,6 @@
 [project]
 name = "velo"
-version = "1.2.0"
+version = "2.0.0"
 description = "Mouse Input overlay for OBS. Made for aim trainers and FPS games."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -10,8 +10,19 @@ license = { text = "MIT" }
 where = ["."]
 include = ["velo*"]
 
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
 [tool.bumpversion]
-current_version = "1.2.0"
+current_version = "2.0.0"
 commit = false
 tag = false
 allow_dirty = true

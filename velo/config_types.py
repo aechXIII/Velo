@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Mapping, MutableMapping
 
-# Snapshot / patch maps. Keys and defaults are defined in velo.defaults.DEFAULTS.
+# Snapshot / patch maps. Keys and defaults are defined in velo.defaults.DEFAULTS
 ConfigMap = Dict[str, Any]
 ConfigView = Mapping[str, Any]
 ConfigPatch = MutableMapping[str, Any]

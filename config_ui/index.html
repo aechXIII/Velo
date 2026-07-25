@@ -11,15 +11,28 @@
     <div class="body">
       <section class="preview">
         <div class="preview-bar">
-          <span>Preview</span>
+          <div class="preview-mode-btns" id="preview-mode-btns">
+            <button type="button" class="preview-mode-btn" data-mode="off">Off</button>
+            <button type="button" class="preview-mode-btn active" data-mode="lite">Lite</button>
+            <button type="button" class="preview-mode-btn" data-mode="live">Live</button>
+            <button type="button" class="preview-mode-btn" data-mode="auto">Auto</button>
+          </div>
           <div class="preview-bar-r">
-            <select id="preview-mode" title="Live uses more CPU. Prefer Lite or Off while streaming.">
-              <option value="off">Off</option>
-              <option value="lite" selected>Lite</option>
-              <option value="live">Live</option>
-            </select>
-            <label class="inline-check"><input type="checkbox" id="checker" checked /> Grid BG</label>
-            <button type="button" class="btn btn-sm" id="btn-reload">Reload</button>
+            <label class="toggle">
+              <input type="checkbox" id="checker" checked />
+              <span class="track"></span>
+              <span class="label">Grid</span>
+            </label>
+            <span class="preview-bar-sep"></span>
+            <button type="button" class="btn btn-sm btn-icon" id="btn-undo" disabled title="Undo (Ctrl+Z)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            </button>
+            <button type="button" class="btn btn-sm btn-icon" id="btn-redo" disabled title="Redo (Ctrl+Shift+Z)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            </button>
+            <button type="button" class="btn btn-sm btn-icon" id="btn-reload" title="Reload preview">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+            </button>
           </div>
         </div>
         <div class="stage" id="stage">
@@ -27,15 +40,23 @@
           <div class="preview-off" id="preview-off" aria-hidden="true">
             Preview off
           </div>
+          <div class="preview-loading" id="preview-loading" hidden>
+            <span class="spinner"></span>
+            <span>Loading preview...</span>
+          </div>
+          <div class="preview-error" id="preview-error" hidden>
+            <span>Preview failed to load</span>
+            <button type="button" class="btn btn-sm" id="btn-preview-retry">Retry</button>
+          </div>
           <div class="preview-viewport" id="preview-viewport">
             <iframe id="frame" title="preview"></iframe>
           </div>
-        </div>
-        <p class="obs-hint" id="obs-size-hint">Preview = OBS size <strong id="size-label">640 × 360</strong> (scaled to fit)</p>
-      </section>
+</div>
+          </section>
 
       <aside class="panel">
         <div class="panel-body">
+          <div class="panel-body-row">
         <nav class="sec-nav" id="sec-nav" aria-label="Settings sections">
           <div class="sec-nav-label">Settings</div>
           <button type="button" class="sec-btn active" data-section="presets"><span class="sec-dot"></span>Presets</button>
@@ -51,58 +72,22 @@
         </nav>
 
         <div class="panel-main">
+        <div class="search-wrap">
+          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="search" id="settings-search" class="search-input" placeholder="Search settings..." autocomplete="off" />
+          <button type="button" class="search-clear" id="search-clear" hidden aria-label="Clear search">&times;</button>
+        </div>
+        <div class="search-empty" id="search-empty" hidden>No matching settings</div>
         <div class="scroll">
           <section class="block sec" data-section="presets">
             <h2>Presets</h2>
-            <div class="dirty-banner" id="preset-dirty" hidden>
-              <div class="dirty-text">
-                <strong>Unsaved changes</strong>
-                <span id="preset-dirty-label">Settings don't match the selected preset.</span>
-              </div>
-              <div class="dirty-actions">
-                <button type="button" class="btn btn-sm" id="btn-dirty-update" hidden>Update</button>
-                <button type="button" class="btn btn-sm btn-ghost" id="btn-dirty-save">Save as new</button>
-                <button type="button" class="btn btn-sm btn-ghost" id="btn-dirty-discard">Discard</button>
-              </div>
-            </div>
-
             <div class="preset-browser" id="preset-list"></div>
 
-            <div class="preset-toolbar" id="preset-selected">
-              <strong class="preset-toolbar-name" id="preset-selected-name">None</strong>
-              <div class="preset-toolbar-actions">
-                <button type="button" class="btn btn-sm btn-ghost btn-icon" id="btn-preset-update" disabled title="Update saved preset">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
-                </button>
-                <button type="button" class="btn btn-sm btn-ghost btn-icon" id="btn-preset-rename" disabled title="Rename">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
-                </button>
-                <button type="button" class="btn btn-sm btn-ghost btn-icon" id="btn-preset-delete" disabled title="Delete">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
-                </button>
-                <button type="button" class="btn btn-sm btn-ghost btn-icon" id="btn-preset-export" disabled title="Export to file">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-                </button>
-                <button type="button" class="btn btn-sm btn-ghost btn-icon" id="btn-preset-copy" disabled title="Copy share code">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                </button>
-              </div>
-            </div>
-
-            <div class="preset-save-block">
-              <label class="preset-save-label" for="preset-name">Save current as new</label>
-              <div class="preset-save-row">
-                <input type="text" id="preset-name" class="preset-name" placeholder="Preset name" maxlength="48" />
-                <button type="button" class="btn" id="btn-preset-save">Save</button>
-              </div>
-            </div>
-
             <div class="preset-import-block">
-              <button type="button" class="btn btn-block btn-ghost" id="btn-preset-import">Import file</button>
-              <label class="preset-save-label" for="preset-code-input">Or paste a share code</label>
-              <textarea id="preset-code-input" class="preset-code-input" rows="4" placeholder="VELO1...." spellcheck="false"></textarea>
-              <button type="button" class="btn btn-block" id="btn-preset-import-code">Import code</button>
-              <p class="note preset-path-note">Folder: <span class="mono">%APPDATA%\Velo\presets\</span></p>
+              <button type="button" class="btn btn-sm btn-block" id="btn-preset-import">Import from file</button>
+              <div class="preset-import-divider"><span>or paste share code</span></div>
+              <textarea id="preset-code-input" class="preset-code-textarea" placeholder="VELO1..." spellcheck="false" rows="3"></textarea>
+              <button type="button" class="btn btn-sm btn-block" id="btn-preset-import-code">Import</button>
             </div>
           </section>
 
@@ -132,11 +117,41 @@
           <section class="block sec" data-section="background" hidden>
             <h2>Background</h2>
             <div class="checks">
-              <label><input type="checkbox" data-key="pad_bg_enabled" /> Fill</label>
-              <label><input type="checkbox" data-key="pad_border_enabled" /> Border</label>
-              <label><input type="checkbox" data-key="pad_grid" /> Grid</label>
-              <label><input type="checkbox" data-key="pad_vignette" /> Vignette</label>
-              <label><input type="checkbox" data-key="pad_shadow" /> Shadow</label>
+              <div class="toggle-row">
+                <span class="label">Fill</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="pad_bg_enabled" />
+                  <span class="track"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <span class="label">Border</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="pad_border_enabled" />
+                  <span class="track"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <span class="label">Grid</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="pad_grid" />
+                  <span class="track"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <span class="label">Vignette</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="pad_vignette" />
+                  <span class="track"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <span class="label">Shadow</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="pad_shadow" />
+                  <span class="track"></span>
+                </label>
+              </div>
             </div>
             <div class="field">
               <label>Shape</label>
@@ -178,16 +193,16 @@
             <div class="row2">
               <div class="field">
                 <label>Fill color</label>
-                <input type="color" data-key="pad_bg_color" data-color />
+                <input type="color" data-key="pad_bg_color" />
               </div>
               <div class="field">
                 <label>Border color</label>
-                <input type="color" data-key="pad_border_color" data-color />
+                <input type="color" data-key="pad_border_color" />
               </div>
             </div>
             <div class="field">
               <label>Grid color</label>
-              <input type="color" data-key="pad_grid_color" data-color />
+              <input type="color" data-key="pad_grid_color" />
             </div>
           </section>
 
@@ -196,7 +211,7 @@
             <div class="field">
               <label>
                 Feel
-                <span class="info" tabindex="0" data-tip="Quick presets for how fast and smooth movement looks on the pad.">i</span>
+                <span class="info" tabindex="0" data-tip="How fast and smooth movement feels on the pad.">i</span>
               </label>
               <div class="feel-pills" id="feel-pills" role="group" aria-label="Motion feel">
                 <button type="button" class="feel-pill" data-feel="tight">Tight</button>
@@ -207,28 +222,28 @@
             </div>
             <div class="slider" data-slider>
               <div class="slider-h">
-                <span>Sensitivity <span class="info" tabindex="0" data-tip="How far the trail moves for a flick. Lower = smaller distance.">i</span></span>
+                <span>Sensitivity <span class="info" tabindex="0" data-tip="How far the trail moves per flick. Lower = smaller distance.">i</span></span>
                 <input type="number" class="val-input" data-link="motion_scale" min="0.01" max="3" step="0.01" />
               </div>
               <input type="range" data-key="motion_scale" min="0.01" max="3" step="0.01" />
             </div>
             <div class="slider" data-slider data-pan-only>
               <div class="slider-h">
-                <span>View zoom <span class="info" tabindex="0" data-tip="In infinite pan: zoom out to see more of the trail. Lower = more zoomed out.">i</span></span>
+                <span>View zoom <span class="info" tabindex="0" data-tip="How zoomed in the view is. Lower = more of the trail visible.">i</span></span>
                 <input type="number" class="val-input" data-link="view_zoom" min="0.25" max="1.5" step="0.05" />
               </div>
               <input type="range" data-key="view_zoom" min="0.25" max="1.5" step="0.05" />
             </div>
             <div class="slider" data-slider>
               <div class="slider-h">
-                <span>Motion smoothening <span class="info" tabindex="0" data-tip="Smooths movement. Higher = softer, more drawn-out flicks.">i</span></span>
+                <span>Motion smoothening <span class="info" tabindex="0" data-tip="Smooths movement. Higher = softer flicks.">i</span></span>
                 <input type="number" class="val-input" data-link="motion_ease" step="0.01" />
               </div>
               <input type="range" data-key="motion_ease" min="0" max="0.9" step="0.01" />
             </div>
             <div class="slider" data-slider data-pan-only>
               <div class="slider-h">
-                <span>Camera lag <span class="info" tabindex="0" data-tip="In infinite pan: how slowly the view follows the cursor. 0 = locked on.">i</span></span>
+                <span>Camera lag <span class="info" tabindex="0" data-tip="How slowly the view follows the cursor. 0 = locked on.">i</span></span>
                 <input type="number" class="val-input" data-link="camera_lag" step="0.01" />
               </div>
               <input type="range" data-key="camera_lag" min="0" max="0.9" step="0.01" />
@@ -236,7 +251,7 @@
             <div class="field">
               <label>
                 View
-                <span class="info" tabindex="0" data-tip="Infinite pan: the pad scrolls with you. Fixed: stop at the edges.">i</span>
+                <span class="info" tabindex="0" data-tip="Infinite pan scrolls with you. Fixed stops at the edges.">i</span>
               </label>
               <select data-key="view_mode" id="view-mode">
                 <option value="infinite">Infinite pan</option>
@@ -246,47 +261,69 @@
             <div class="field">
               <label>
                 Capture
-                <span class="info" tabindex="0" data-tip="Relative: best for games and aim trainers. Absolute: desktop cursor position.">i</span>
+                <span class="info" tabindex="0" data-tip="Relative for games. Absolute uses your desktop cursor position.">i</span>
               </label>
               <select data-key="capture_mode">
                 <option value="relative">Relative</option>
                 <option value="absolute">Absolute (desktop)</option>
               </select>
             </div>
-            <label class="inline-check"><input type="checkbox" data-key="invert_y" /> Invert Y</label>
+            <label class="toggle">
+              <input type="checkbox" data-key="invert_y" />
+              <span class="track"></span>
+              <span class="label">Invert Y</span>
+            </label>
           </section>
 
           <section class="block sec" data-section="trail" hidden>
             <h2>Trail</h2>
             <div class="checks">
-              <label><input type="checkbox" data-key="trail_enabled" /> Enabled</label>
-              <label><input type="checkbox" data-key="trail_glow" /> Glow</label>
-              <label><input type="checkbox" data-key="speed_colorize" /> Speed colors</label>
+              <div class="toggle-row">
+                <span class="label">Enabled</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="trail_enabled" />
+                  <span class="track"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <span class="label">Speed colors</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="speed_colorize" />
+                  <span class="track"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <span class="label">Glow</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="trail_glow" />
+                  <span class="track"></span>
+                </label>
+              </div>
             </div>
             <div class="field" id="trail-solid-color">
               <label>Trail color</label>
-              <input type="color" data-key="trail_color" data-color />
+              <input type="color" data-key="trail_color" />
             </div>
             <div id="trail-speed-colors" hidden>
               <h3 class="subhead">Speed gradient</h3>
               <div class="row2">
                 <div class="field">
                   <label>Slow</label>
-                  <input type="color" id="speed-stop-0" data-color />
+                  <input type="color" id="speed-stop-0" />
                 </div>
                 <div class="field">
                   <label>Mid</label>
-                  <input type="color" id="speed-stop-1" data-color />
+                  <input type="color" id="speed-stop-1" />
                 </div>
               </div>
               <div class="row2">
                 <div class="field">
                   <label>Fast</label>
-                  <input type="color" id="speed-stop-2" data-color />
+                  <input type="color" id="speed-stop-2" />
                 </div>
                 <div class="field">
                   <label>Peak</label>
-                  <input type="color" id="speed-stop-3" data-color />
+                  <input type="color" id="speed-stop-3" />
                 </div>
               </div>
               <div class="slider" data-slider>
@@ -313,17 +350,45 @@
             </div>
             <div class="slider" data-slider>
               <div class="slider-h">
-                <span>Curve <span class="info" tabindex="0" data-tip="0 = straight segments. 1 = fully curved path between points.">i</span></span>
+                <span>Curve <span class="info" tabindex="0" data-tip="0 = straight segments. 1 = fully curved path.">i</span></span>
                 <input type="number" class="val-input" data-link="trail_curve" step="0.01" />
               </div>
               <input type="range" data-key="trail_curve" min="0" max="1" step="0.01" />
+</div>
+            <h3 class="subhead">Glow</h3>
+            <div id="glow-options">
+              <div class="slider" data-slider>
+                <div class="slider-h"><span>Opacity</span><input type="number" class="val-input" data-link="trail_glow_opacity" min="0.05" max="1" step="0.05" /></div>
+                <input type="range" data-key="trail_glow_opacity" min="0.05" max="1" step="0.05" />
+              </div>
+              <div class="slider" data-slider>
+                <div class="slider-h"><span>Width</span><input type="number" class="val-input" data-link="trail_glow_width" min="0.5" max="3" step="0.1" /></div>
+                <input type="range" data-key="trail_glow_width" min="0.5" max="3" step="0.1" />
+              </div>
+              <div class="toggle-row">
+                <span class="label">Custom color</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="trail_glow_custom_color" />
+                  <span class="track"></span>
+                </label>
+              </div>
+              <div class="field" id="glow-color-field" hidden>
+                <label>Glow color</label>
+                <input type="color" data-key="trail_glow_custom_color_val" />
+              </div>
             </div>
           </section>
 
           <section class="block sec" data-section="cursor" hidden>
             <h2>Cursor</h2>
             <div class="checks">
-              <label><input type="checkbox" data-key="show_cursor_dot" /> Show cursor</label>
+              <div class="toggle-row">
+                <span class="label">Show cursor</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="show_cursor_dot" />
+                  <span class="track"></span>
+                </label>
+              </div>
             </div>
             <div class="slider" data-slider>
               <div class="slider-h">
@@ -334,13 +399,25 @@
             </div>
             <div class="field">
               <label>Color</label>
-              <input type="color" data-key="cursor_dot_color" data-color />
+              <input type="color" data-key="cursor_dot_color" />
             </div>
 
             <h3 class="subhead">Clicks</h3>
             <div class="checks">
-              <label><input type="checkbox" data-key="show_clicks" /> Show clicks</label>
-              <label><input type="checkbox" data-key="click_expand" /> Expand out</label>
+              <div class="toggle-row">
+                <span class="label">Show clicks</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="show_clicks" />
+                  <span class="track"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <span class="label">Expand out</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="click_expand" />
+                  <span class="track"></span>
+                </label>
+              </div>
             </div>
             <div class="field">
               <label>
@@ -384,20 +461,36 @@
             </div>
             <div class="click-buttons">
               <div class="click-btn-row">
-                <label class="inline-check"><input type="checkbox" id="click-show-left" /> Left</label>
-                <input type="color" id="click-color-left" data-color />
+                <label class="toggle">
+                  <input type="checkbox" id="click-show-left" />
+                  <span class="track"></span>
+                  <span class="label">Left</span>
+                </label>
+                <input type="color" id="click-color-left" />
               </div>
               <div class="click-btn-row">
-                <label class="inline-check"><input type="checkbox" id="click-show-right" /> Right</label>
-                <input type="color" id="click-color-right" data-color />
+                <label class="toggle">
+                  <input type="checkbox" id="click-show-right" />
+                  <span class="track"></span>
+                  <span class="label">Right</span>
+                </label>
+                <input type="color" id="click-color-right" />
               </div>
               <div class="click-btn-row">
-                <label class="inline-check"><input type="checkbox" id="click-show-middle" /> Middle</label>
-                <input type="color" id="click-color-middle" data-color />
+                <label class="toggle">
+                  <input type="checkbox" id="click-show-middle" />
+                  <span class="track"></span>
+                  <span class="label">Middle</span>
+                </label>
+                <input type="color" id="click-color-middle" />
               </div>
               <div class="click-btn-row">
-                <label class="inline-check"><input type="checkbox" id="click-show-side" /> Side</label>
-                <input type="color" id="click-color-side" data-color />
+                <label class="toggle">
+                  <input type="checkbox" id="click-show-side" />
+                  <span class="track"></span>
+                  <span class="label">Side</span>
+                </label>
+                <input type="color" id="click-color-side" />
               </div>
             </div>
           </section>
@@ -405,17 +498,72 @@
           <section class="block sec" data-section="hud" hidden>
             <h2>HUD</h2>
             <div class="checks">
-              <label><input type="checkbox" data-key="show_stats" /> Show HUD</label>
-              <label><input type="checkbox" data-key="stats_bg" /> Background</label>
-              <label><input type="checkbox" data-key="stats_border" /> Border</label>
+              <div class="toggle-row">
+                <span class="label">Show HUD</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="show_stats" />
+                  <span class="track"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <span class="label">Background</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="stats_bg" />
+                  <span class="track"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <span class="label">Border</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="stats_border" />
+                  <span class="track"></span>
+                </label>
+              </div>
             </div>
             <h3 class="subhead">Metrics</h3>
             <div class="checks">
-              <label><input type="checkbox" data-key="stats_show_speed" /> Speed</label>
-              <label><input type="checkbox" data-key="stats_show_peak" /> Peak speed</label>
-              <label><input type="checkbox" data-key="stats_show_distance" /> Distance</label>
-              <label><input type="checkbox" data-key="stats_show_clicks" /> Click count</label>
-              <label><input type="checkbox" data-key="stats_show_cps" /> CPS</label>
+              <div class="toggle-row">
+                <span class="label">Speed</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="stats_show_speed" />
+                  <span class="track"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <span class="label">Peak speed</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="stats_show_peak" />
+                  <span class="track"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <span class="label">Average Speed</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="hud_show_avg_speed" />
+                  <span class="track"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <span class="label">Distance</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="stats_show_distance" />
+                  <span class="track"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <span class="label">Click count</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="stats_show_clicks" />
+                  <span class="track"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <span class="label">CPS</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="stats_show_cps" />
+                  <span class="track"></span>
+                </label>
+              </div>
             </div>
             <div class="field">
               <label>Units</label>
@@ -428,7 +576,7 @@
             <div class="field">
               <label>
                 Update rate
-                <span class="info" tabindex="0" data-tip="How often HUD numbers refresh">i</span>
+                <span class="info" tabindex="0" data-tip="How often HUD numbers refresh.">i</span>
               </label>
               <select data-key="stats_update_rate">
                 <option value="slow">Slow</option>
@@ -472,7 +620,7 @@
             <div class="field">
               <label>
                 Quality
-                <span class="info" tabindex="0" data-tip="Bundles trail cost settings. Performance is cheapest, Pretty is heaviest.">i</span>
+                <span class="info" tabindex="0" data-tip="Trail quality preset. Performance is cheapest quality.">i</span>
               </label>
               <select data-key="render_quality" id="render-quality">
                 <option value="performance">Performance</option>
@@ -489,7 +637,7 @@
             </div>
             <div class="slider" data-slider>
               <div class="slider-h">
-                <span>Send rate (Hz) <span class="info" tabindex="0" data-tip="How often mouse moves are sent over the network. Higher = smoother trail, more CPU.">i</span></span>
+                <span>Send rate (Hz) <span class="info" tabindex="0" data-tip="How often mouse moves are sent. Higher = smoother trail, more CPU.">i</span></span>
                 <input type="number" class="val-input" data-link="ws_send_hz" step="1" />
               </div>
               <input type="range" data-key="ws_send_hz" min="30" max="240" step="1" />
@@ -548,9 +696,32 @@
           <section class="block sec" data-section="settings" hidden>
             <h2>Settings</h2>
             <h3 class="subhead">Startup</h3>
-            <div class="checks checks-one-col">
-              <label><input type="checkbox" data-key="start_with_windows" id="chk-autostart" /> Autostart</label>
-              <label class="startup-min-label" id="label-minimized"><input type="checkbox" data-key="start_minimized" id="chk-minimized" /> Minimized</label>
+            <div class="checks">
+              <div class="toggle-row">
+                <span class="label">Autostart</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="start_with_windows" id="chk-autostart" />
+                  <span class="track"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <span class="label">Minimized</span>
+                <label class="toggle startup-min-label" id="label-minimized">
+                  <input type="checkbox" data-key="start_minimized" id="chk-minimized" />
+                  <span class="track"></span>
+                </label>
+              </div>
+            </div>
+            <h3 class="subhead">Theme</h3>
+            <div class="row2">
+              <div class="field">
+                <label>Accent</label>
+                <input type="color" data-key="accent_color" value="#a277ff">
+              </div>
+              <div class="field">
+                <label>Background</label>
+                <input type="color" data-key="bg_color" value="#0f0f0f">
+              </div>
             </div>
             <h3 class="subhead">Mouse</h3>
             <div class="slider" data-slider>
@@ -595,15 +766,50 @@
             <button type="button" class="btn btn-block btn-ghost" id="btn-reset">Reset all defaults</button>
           </section>
         </div>
-        <footer class="foot">
-          <span id="status">-</span>
-        </footer>
+        
+        </div>
+          </div>
+        <div class="preset-bar" id="preset-toolbar">
+          <div class="preset-bar-inner">
+            <div class="preset-bar-left">
+              <span class="preset-bar-label">Active</span>
+              <strong class="preset-bar-name" id="preset-selected-name">No preset selected</strong>
+            </div>
+            <div class="preset-bar-right">
+              <button type="button" class="btn btn-sm btn-icon" id="btn-preset-export" disabled title="Export to file">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+              </button>
+              <button type="button" class="btn btn-sm btn-icon" id="btn-preset-copy" disabled title="Share code">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              </button>
+              <div class="preset-toolbar-more">
+                <button type="button" class="btn btn-sm btn-icon" id="btn-preset-more-btn" disabled title="More actions">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+                </button>
+                <div class="preset-toolbar-menu" id="preset-toolbar-menu" hidden>
+                  <button type="button" class="preset-menu-item" id="btn-preset-rename">Rename</button>
+                  <button type="button" class="preset-menu-item" id="btn-preset-duplicate">Duplicate</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="preset-bar-dirty" id="preset-toolbar-dirty" hidden>
+            <div class="preset-bar-dirty-actions">
+              <button type="button" class="preset-dirty-btn" id="btn-dirty-update">Update</button>
+              <button type="button" class="preset-dirty-btn" id="btn-dirty-save">Save as</button>
+              <button type="button" class="preset-dirty-btn" id="btn-dirty-discard">Discard</button>
+            </div>
+          </div>
         </div>
         </div>
       </aside>
     </div>
+    <footer class="app-foot">
+      <span class="app-foot-left"><strong id="size-label">640 × 360</strong> · scaled to fit</span>
+      <span class="app-foot-right" id="status">-</span>
+    </footer>
   </div>
-  <div class="toast" id="toast" hidden></div>
+  <div class="toast-container" id="toast-container"></div>
   <div class="modal-root" id="modal-root" hidden>
     <div class="modal-backdrop" id="modal-backdrop"></div>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
@@ -628,6 +834,37 @@
         <button type="button" class="btn btn-ghost" id="update-modal-skip">Skip</button>
         <button type="button" class="btn btn-ghost" id="update-modal-later">Later</button>
         <button type="button" class="btn" id="update-modal-install">Download and install</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-root" id="onboarding-overlay" hidden>
+    <div class="modal-backdrop" id="onboarding-backdrop"></div>
+    <div class="onboarding-modal" id="onboarding-modal" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+      <div class="onboarding-header">
+        <h2 id="onboarding-title">Welcome to Velo!</h2>
+        <p id="onboarding-desc">Set up your mouse input overlay in a few steps.</p>
+      </div>
+      <div class="onboarding-steps" id="onboarding-steps">
+        <div class="onboarding-step" data-step="0">1</div>
+        <div class="onboarding-step" data-step="1">2</div>
+        <div class="onboarding-step" data-step="2">3</div>
+        <div class="onboarding-step" data-step="3">4</div>
+        <div class="onboarding-step" data-step="4">5</div>
+      </div>
+      <div class="onboarding-content" id="onboarding-content">
+      </div>
+      <div class="onboarding-footer">
+        <label class="onboarding-skip-label toggle">
+          <input type="checkbox" id="onboarding-dont-show">
+          <span class="track"></span>
+          <span class="label">Don't show this again</span>
+        </label>
+        <div class="onboarding-footer-buttons">
+          <button id="onboarding-skip" class="btn btn-secondary" style="margin-right:auto;">Skip</button>
+          <button id="onboarding-back" class="btn btn-secondary" hidden>Back</button>
+          <button id="onboarding-next" class="btn btn-primary">Next</button>
+          <button id="onboarding-finish" class="btn btn-primary" hidden>Get Started</button>
+        </div>
       </div>
     </div>
   </div>

@@ -45,6 +45,8 @@ from velo._win32 import (
     kernel32,
     user32,
 )
+from velo.constants import MOUSE_MOVE_ABSOLUTE, THREAD_PRIORITY
+from velo.error_handling import safe_thread
 
 
 @dataclass
@@ -159,7 +161,7 @@ class MouseCapture:
             try:
                 cb(event)
             except Exception:
-                # One bad listener must not stop capture delivery.
+                # One bad listener must not stop capture delivery
                 continue
 
     def _apply_transform(self, dx: float, dy: float) -> Tuple[float, float]:
@@ -203,7 +205,7 @@ class MouseCapture:
 
         dx = float(mouse.lLastX)
         dy = float(mouse.lLastY)
-        is_relative = (flags & 0x01) == MOUSE_MOVE_RELATIVE
+        is_relative = (flags & MOUSE_MOVE_ABSOLUTE) == MOUSE_MOVE_RELATIVE
 
         with self._lock:
             mode = self._mode
@@ -277,9 +279,10 @@ class MouseCapture:
             return
         self._handle_raw_mouse(raw.data.mouse)
 
+    @safe_thread("capture")
     def _raw_message_loop(self) -> None:
         try:
-            kernel32.SetThreadPriority(kernel32.GetCurrentThread(), 2)
+            kernel32.SetThreadPriority(kernel32.GetCurrentThread(), THREAD_PRIORITY)
         except Exception:
             pass
 

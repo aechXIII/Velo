@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import mimetypes
 import sys
@@ -15,8 +16,11 @@ from aiohttp import WSMsgType, web
 from aiohttp.web_exceptions import HTTPException
 
 from velo.config import APP_VERSION, PRESET_EXCLUDE, ConfigStore
+from velo.config_schema import validate_config
 from velo.config_types import ConfigMap
 from velo.file_dialogs import open_json_dialog, save_json_dialog
+from velo.logging import get_logger
+from velo.metrics import metrics
 
 RestartCallback = Callable[[], None]
 StatsResetCallback = Callable[[], ConfigMap]
@@ -47,6 +51,7 @@ def _clean_path(path: Optional[str]) -> Optional[str]:
 class VeloServer:
     def __init__(self, config: ConfigStore) -> None:
         self.config = config
+        self._logger = get_logger()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
         self._runner: Optional[web.AppRunner] = None
@@ -290,8 +295,11 @@ class VeloServer:
         app.router.add_post("/api/update/remind", self._handle_api_update_remind)
         app.router.add_post("/api/update/skip", self._handle_api_update_skip)
         app.router.add_post("/api/update/install", self._handle_api_update_install)
-        app.router.add_get("/api/health", self._handle_health)
+        app.router.add_get("/api/health", self._safe_handler(self._handle_health))
         app.router.add_get("/api/status", self._handle_status)
+        app.router.add_get("/api/metrics", self._safe_handler(self._handle_metrics))
+        app.router.add_get("/api/onboarding", self._handle_onboarding_check)
+        app.router.add_post("/api/onboarding/dismiss", self._handle_onboarding_dismiss)
         app.router.add_get("/ws", self._handle_ws)
 
         host = self.config.get("host") or "127.0.0.1"
@@ -378,6 +386,20 @@ class VeloServer:
         body.update(extra)
         return web.json_response(body)
 
+    def _safe_handler(
+        self, handler: Callable[[web.Request], Any]
+    ) -> Callable[[web.Request], Any]:
+        @functools.wraps(handler)
+        async def wrapper(request: web.Request) -> web.StreamResponse:
+            try:
+                return await handler(request)
+            except Exception as exc:
+                self._logger.error("Handler %s crashed: %s", handler.__name__, exc)
+                return web.json_response(
+                    {"ok": False, "error": "internal server error"}, status=500
+                )
+        return wrapper
+
     async def _handle_root(self, request: web.Request) -> web.StreamResponse:
         raise web.HTTPFound("/config")
 
@@ -431,6 +453,12 @@ class VeloServer:
         if err:
             return err
         assert patch is not None
+        validation_errors = validate_config(patch)
+        if validation_errors:
+            return web.json_response(
+                {"ok": False, "error": "validation failed", "validation_errors": validation_errors},
+                status=400,
+            )
         return self._ok_snap(self.config.update(patch, persist=True))
 
     async def _handle_api_config_reset(self, request: web.Request) -> web.Response:
@@ -814,6 +842,20 @@ class VeloServer:
                 "error": self._last_error,
             }
         )
+
+    async def _handle_metrics(self, request: web.Request) -> web.Response:
+        denied = await self._require_auth(request)
+        if denied:
+            return denied
+        return web.json_response({"ok": True, "metrics": metrics.snapshot()})
+
+    async def _handle_onboarding_check(self, request: web.Request) -> web.Response:
+        config = self.config.snapshot()
+        return web.json_response({"show": config.get("show_onboarding", True)})
+
+    async def _handle_onboarding_dismiss(self, request: web.Request) -> web.Response:
+        self.config.update({"show_onboarding": False})
+        return web.json_response({"status": "ok"})
 
     def set_runtime_status(
         self, *, capture_running: bool = False, capture_error: Optional[str] = None

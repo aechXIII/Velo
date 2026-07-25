@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 APP_NAME = "Velo"
-APP_VERSION = "1.2.0"
+APP_VERSION = "2.0.0"
 PRESET_CLIP_PREFIX = "VELO1."
+PRESET_CLIP_PREFIX_V2 = "VELO2."
 
 PRESET_EXCLUDE = frozenset(
     {
@@ -26,6 +27,10 @@ PRESET_EXCLUDE = frozenset(
         "stats_reset_hotkey",
         "stats_dpi",
         "stats_update_rate",
+        "show_onboarding",
+        "accent_color",
+        "bg_color",
+        "hidden_presets",
     }
 )
 
@@ -45,6 +50,10 @@ SHELL_KEYS = frozenset(
         "stats_reset_hotkey",
         "stats_dpi",
         "stats_update_rate",
+        "show_onboarding",
+        "accent_color",
+        "bg_color",
+        "hidden_presets",
     }
 )
 
@@ -90,6 +99,10 @@ QUALITY_PRESETS: Dict[str, Dict[str, Any]] = {
         "trail_curve": 0.55,
         "trail_glow": True,
         "trail_glow_blur": 6,
+        "trail_glow_opacity": 1.0,
+        "trail_glow_width": 1.0,
+        "trail_glow_custom_color": False,
+        "trail_glow_custom_color_val": "#ffffff",
         "trail_smoothing": 0.0,
         "trail_lifetime_ms": 750,
         "ws_send_hz": 120,
@@ -101,6 +114,10 @@ QUALITY_PRESETS: Dict[str, Dict[str, Any]] = {
         "trail_curve": 0.85,
         "trail_glow": True,
         "trail_glow_blur": 12,
+        "trail_glow_opacity": 1.0,
+        "trail_glow_width": 1.0,
+        "trail_glow_custom_color": False,
+        "trail_glow_custom_color_val": "#ffffff",
         "trail_smoothing": 0.0,
         "trail_lifetime_ms": 900,
         "ws_send_hz": 180,
@@ -256,6 +273,10 @@ DEFAULTS: Dict[str, Any] = {
     "trail_width": 2.4,
     "trail_glow": True,
     "trail_glow_blur": 6,
+    "trail_glow_opacity": 1.0,
+    "trail_glow_width": 1.0,
+    "trail_glow_custom_color": False,
+    "trail_glow_custom_color_val": "#ffffff",
     "trail_min_distance": 1.2,
     "trail_smoothing": 0.0,
     "trail_curve": 0.55,
@@ -349,6 +370,137 @@ DEFAULTS: Dict[str, Any] = {
     "ui_obs_setup_done": False,
     "active_preset": "16:9 pad",
     "active_preset_kind": "builtin",
+    "show_onboarding": True,
+    "hud_show_avg_speed": True,
+    "accent_color": "#a277ff",
+    "bg_color": "#0f0f0f",
+    "hidden_presets": [],
 }
+
+# Config key -> alias mapping for VELO2 share codes
+# Dict sub-keys use ("parent", "sub") tuples
+SHARE_ALIASES: Dict[str, Any] = {
+    # Trail
+    "trail_enabled": "te",
+    "trail_lifetime_ms": "tl",
+    "trail_max_points": "tx",
+    "trail_width": "tw",
+    "trail_glow": "tg",
+    "trail_glow_blur": "tb",
+    "trail_glow_opacity": "go",
+    "trail_glow_width": "gw",
+    "trail_glow_custom_color": "gc",
+    "trail_glow_custom_color_val": "gcv",
+    "trail_min_distance": "td",
+    "trail_smoothing": "ts",
+    "trail_curve": "tk",
+    "trail_samples": "tn",
+    "fade_style": "tf",
+    "trail_color": "tc",
+    "speed_colorize": "tz",
+    "speed_max": "smx",
+    "speed_min": "smn",
+    "speed_stops": "sps",
+
+    # Pad
+    "pad_enabled": "pe",
+    "pad_shape": "ph",
+    "pad_width_pct": "pw",
+    "pad_height_pct": "pht",
+    "pad_x_pct": "px",
+    "pad_y_pct": "py",
+    "pad_radius": "pr",
+    "pad_bg_enabled": "pbe",
+    "pad_bg_color": "pbc",
+    "pad_bg_opacity": "pbo",
+    "pad_blur": "pbz",
+    "pad_border_enabled": "pbre",
+    "pad_border_color": "pbrc",
+    "pad_border_opacity": "pbro",
+    "pad_border_width": "pbrw",
+    "pad_shadow": "psh",
+    "pad_shadow_opacity": "psho",
+    "pad_grid": "pg",
+    "pad_grid_size": "pgs",
+    "pad_grid_thickness": "pgt",
+    "pad_grid_color": "pgc",
+    "pad_grid_opacity": "pgo",
+    "pad_crosshair": "pch",
+    "pad_crosshair_color": "pchc",
+    "pad_crosshair_opacity": "pcho",
+    "pad_crosshair_size": "pchs",
+    "pad_vignette": "pv",
+    "pad_vignette_opacity": "pvo",
+    "pad_clip_trail": "pct",
+
+    # Cursor & clicks
+    "show_cursor_dot": "cs",
+    "cursor_dot_size": "cds",
+    "cursor_dot_color": "cdc",
+    "cursor_dot_opacity": "cdo",
+    "show_clicks": "ck",
+    "click_lifetime_ms": "cl",
+    "click_radius": "cr",
+    "click_line_width": "clw",
+    "click_opacity": "cop",
+    "click_expand": "cex",
+    "click_style": "cst",
+
+    # Stats / HUD
+    "show_stats": "ss",
+    "stats_opacity": "so",
+    "stats_bg": "sbg",
+    "stats_border": "sbr",
+    "stats_show_speed": "ssv",
+    "stats_show_peak": "ssp",
+    "stats_show_cps": "ssc",
+    "stats_show_clicks": "ssl",
+    "stats_show_distance": "ssd",
+    "stats_units": "sun",
+    "stats_x_pct": "sxp",
+    "stats_y_pct": "syp",
+    "hud_show_avg_speed": "has",
+
+    # Canvas / source
+    "canvas_aspect": "ca",
+    "canvas_width": "cw",
+    "canvas_height": "ch",
+    "source_bg_enabled": "sbe",
+    "source_bg_color": "sbc",
+    "source_bg_opacity": "sbo",
+    "overlay_opacity": "oo",
+
+    # Motion
+    "sensitivity": "sn",
+    "view_mode": "vm",
+    "camera_lag": "clg",
+    "camera_look_ahead": "cla",
+    "camera_follow": "cf",
+    "view_zoom": "vz",
+    "motion_scale": "ms",
+    "motion_ease": "me",
+    "motion_feel": "mf",
+    "target_fps": "tf",
+    "render_quality": "rq",
+    "ws_send_hz": "whz",
+
+    # Capture
+    "capture_mode": "cm",
+    "invert_y": "iy",
+
+    # Nested dict sub-keys -> dot-notation alias strings
+    "click_colors|left": "cl.l",
+    "click_colors|right": "cl.r",
+    "click_colors|middle": "cl.m",
+    "click_colors|x1": "cl.x1",
+    "click_colors|x2": "cl.x2",
+    "click_show|left": "sh.l",
+    "click_show|right": "sh.r",
+    "click_show|middle": "sh.m",
+    "click_show|side": "sh.s",
+}
+
+# Reverse map: alias -> full key path
+REVERSE_SHARE_ALIASES: Dict[str, Any] = {v: k for k, v in SHARE_ALIASES.items()}
 
 

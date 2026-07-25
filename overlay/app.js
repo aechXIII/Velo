@@ -17,6 +17,8 @@
   const sSpeedUnit = document.getElementById("s-speed-unit");
   const sPeakUnit = document.getElementById("s-peak-unit");
   const sDistUnit = document.getElementById("s-dist-unit");
+  const sAvgSpeed = document.getElementById("s-avg-speed");
+  const sAvgSpeedUnit = document.getElementById("s-avg-speed-unit");
 
   const qs = new URLSearchParams(location.search);
   const previewLite = qs.get("preview") === "lite";
@@ -37,6 +39,10 @@
     trail_width: 2.4,
     trail_glow: true,
     trail_glow_blur: 6,
+    trail_glow_opacity: 1,
+    trail_glow_width: 1,
+    trail_glow_custom_color: false,
+    trail_glow_custom_color_val: "#ffffff",
     trail_min_distance: 1.2,
     trail_smoothing: 0,
     trail_curve: 0.55,
@@ -122,6 +128,7 @@
     stats_show_distance: true,
     stats_units: "cm",
     stats_dpi: 800,
+    hud_show_avg_speed: true,
   };
 
   const CM_PER_INCH = 2.54;
@@ -165,12 +172,18 @@
   let serverOrigin = null;
   let needsDraw = true;
 
+  let hudDrag = null;
+  let shiftHeld = false;
+
+  let speedSamples = 0;
+  let accumulatedSpeed = 0;
+
   function hexToRgb(hex) {
     if (colorCache.has(hex)) return colorCache.get(hex);
     let h = String(hex || "#ffffff").replace("#", "").trim();
     if (h.length === 3) h = h.split("").map((c) => c + c).join("");
     if (h.length >= 8) h = h.slice(0, 6);
-    // parseInt("#000000") is 0 — must not use || fallback (that forced white)
+    // parseInt("#000000") is 0 -- must not use || fallback (that forced white)
     let n = parseInt(h, 16);
     if (!Number.isFinite(n)) n = 0xffffff;
     const rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
@@ -448,6 +461,7 @@
 
     setStatRow("speed", truthyFlag(cfg.stats_show_speed, true));
     setStatRow("peak", truthyFlag(cfg.stats_show_peak, false));
+    setStatRow("avg-speed", truthyFlag(cfg.hud_show_avg_speed, true));
     setStatRow("distance", truthyFlag(cfg.stats_show_distance, true));
     setStatRow("clicks", truthyFlag(cfg.stats_show_clicks, true));
     setStatRow("cps", truthyFlag(cfg.stats_show_cps, true));
@@ -458,6 +472,7 @@
     if (sSpeedUnit) sSpeedUnit.textContent = rateUnit;
     if (sPeakUnit) sPeakUnit.textContent = rateUnit;
     if (sDistUnit) sDistUnit.textContent = distUnit;
+    if (sAvgSpeedUnit) sAvgSpeedUnit.textContent = rateUnit;
 
     placeStatsPanel();
   }
@@ -622,6 +637,9 @@
     tx += mdx;
     ty += mdy;
 
+    speedSamples++;
+    accumulatedSpeed += speed;
+
     if (mode === "fixed") {
       tx = Math.max(0, Math.min(pw, tx));
       ty = Math.max(0, Math.min(ph, ty));
@@ -679,6 +697,7 @@
 
     if (msg.btn && String(msg.btn).endsWith("_down") && cfg.show_clicks) {
       const button = String(msg.btn).replace(/_down$/, "");
+      const btnIdx = button === "left" ? 0 : button === "right" ? 1 : button === "middle" ? 2 : 3;
       if (isClickButtonShown(button)) {
         const colors = cfg.click_colors || {};
         const color =
@@ -816,33 +835,48 @@
 
   function drawSoftGlow(path, width, glowMul) {
     if (path.length < 2) return;
-    const tip = path[path.length - 1];
-    const mid = path[Math.floor(path.length * 0.65)] || tip;
-    const rgb = speedToColor(mid.speed || tip.speed || 0);
+    const first = path[0];
+    const last = path[path.length - 1];
+    const len = path.length;
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.strokeStyle = rgba(rgb, 0.16);
-    ctx.lineWidth = width * glowMul * 1.75;
-    let segStart = 0;
-    for (let i = 1; i < path.length; i++) {
-      if (offscreen(path[i - 1], path[i])) {
-        strokePolyline(path, segStart, i - 1);
-        segStart = i;
+
+    const opacity = Math.max(0, Math.min(1, Number(cfg.trail_glow_opacity) || 1));
+    const widthFactor = Math.max(0.5, Math.min(3, Number(cfg.trail_glow_width) || 1));
+    const customColor = !!cfg.trail_glow_custom_color;
+
+    function glowPass(alpha, widthMul) {
+      const grad = ctx.createLinearGradient(first.x, first.y, last.x, last.y);
+      if (customColor) {
+        const c = hexToRgb(cfg.trail_glow_custom_color_val || "#ffffff");
+        grad.addColorStop(0, rgba(c, 1));
+        grad.addColorStop(1, rgba(c, 1));
+      } else {
+        const stops = Math.min(20, len);
+        for (let i = 0; i < stops; i++) {
+          const idx = Math.floor(i * (len - 1) / (stops - 1));
+          const rgb = speedToColor(path[idx].speed);
+          grad.addColorStop(i / (stops - 1), rgba(rgb, 1));
+        }
       }
-    }
-    strokePolyline(path, segStart, path.length - 1);
-    ctx.strokeStyle = rgba(rgb, 0.28);
-    ctx.lineWidth = width * glowMul;
-    segStart = 0;
-    for (let i = 1; i < path.length; i++) {
-      if (offscreen(path[i - 1], path[i])) {
-        strokePolyline(path, segStart, i - 1);
-        segStart = i;
+      ctx.strokeStyle = grad;
+      ctx.globalAlpha = alpha * opacity;
+      ctx.lineWidth = width * glowMul * widthMul * widthFactor;
+      let segStart = 0;
+      for (let i = 1; i < len; i++) {
+        if (offscreen(path[i - 1], path[i])) {
+          strokePolyline(path, segStart, i - 1);
+          segStart = i;
+        }
       }
+      strokePolyline(path, segStart, len - 1);
     }
-    strokePolyline(path, segStart, path.length - 1);
+
+    glowPass(0.16, 1.75);
+    glowPass(0.28, 1.0);
+
     ctx.restore();
   }
 
@@ -980,6 +1014,10 @@
 
   let lastFrame = performance.now();
   let lastDraw = 0;
+  let fpsTick = performance.now();
+  let fpsCount = 0;
+  let fpsDisplay = 0;
+  let fpsEl = null;
   function frame(ts) {
     requestAnimationFrame(frame);
     const fps = Number(cfg.target_fps);
@@ -988,43 +1026,57 @@
       if (ts - lastDraw < minDelta - 0.5) return;
     }
 
-    const now = ts / 1000;
-    if (pruneFx(now)) needsDraw = true;
+    try {
+      const now = ts / 1000;
+      if (pruneFx(now)) needsDraw = true;
 
-    if (!needsDraw && !isAnimating(now)) {
-      lastFrame = ts;
-      return;
-    }
-
-    lastDraw = ts;
-    const dt = Math.min(0.05, (ts - lastFrame) / 1000);
-    lastFrame = ts;
-
-    stepMotionEase(dt);
-
-    if (isPanView()) {
-      updateCameraTarget();
-      const lag = Math.max(0, Math.min(0.95, Number(cfg.camera_lag) || 0));
-      if (lag <= 0.001) {
-        camX = camTx;
-        camY = camTy;
-      } else {
-        const k = 1 - Math.pow(lag, dt * 55);
-        camX += (camTx - camX) * k;
-        camY += (camTy - camY) * k;
+      if (!needsDraw && !isAnimating(now)) {
+        lastFrame = ts;
+        return;
       }
-      updateGridOffset();
-    } else {
-      camX = 0;
-      camY = 0;
+
+      lastDraw = ts;
+      const dt = Math.min(0.05, (ts - lastFrame) / 1000);
+      lastFrame = ts;
+
+      stepMotionEase(dt);
+
+      if (isPanView()) {
+        updateCameraTarget();
+        const lag = Math.max(0, Math.min(0.95, Number(cfg.camera_lag) || 0));
+        if (lag <= 0.001) {
+          camX = camTx;
+          camY = camTy;
+        } else {
+          const k = 1 - Math.pow(lag, dt * 55);
+          camX += (camTx - camX) * k;
+          camY += (camTy - camY) * k;
+        }
+        updateGridOffset();
+      } else {
+        camX = 0;
+        camY = 0;
+      }
+
+      ctx.clearRect(0, 0, pw, ph);
+      drawTrail(now);
+      drawClicks(now);
+      drawCursor();
+
+      needsDraw = isAnimating(now);
+    } catch (e) {
+      console.error("Render error:", e);
     }
 
-    ctx.clearRect(0, 0, pw, ph);
-    drawTrail(now);
-    drawClicks(now);
-    drawCursor();
-
-    needsDraw = isAnimating(now);
+    fpsCount++;
+    if (ts - fpsTick >= 1000) {
+      fpsDisplay = fpsCount;
+      fpsCount = 0;
+      fpsTick = ts;
+    }
+    if (fpsEl) {
+      fpsEl.textContent = fpsDisplay + " fps";
+    }
   }
 
   function qsToken() {
@@ -1063,6 +1115,10 @@
     if (cfg.stats_show_cps !== false && sCps) {
       sCps.textContent = (data.cps || 0).toFixed(1);
     }
+    if (cfg.hud_show_avg_speed !== false && sAvgSpeed) {
+      const avgSpeed = speedSamples > 0 ? (accumulatedSpeed / speedSamples) : 0;
+      sAvgSpeed.textContent = formatStat(convertCounts(avgSpeed), true);
+    }
   }
 
   function connect() {
@@ -1093,6 +1149,85 @@
     };
   }
 
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Shift") {
+      shiftHeld = true;
+      if (cfg.show_stats) statsEl.classList.add("draggable");
+    }
+  });
+  window.addEventListener("keyup", (e) => {
+    if (e.key === "Shift") {
+      shiftHeld = false;
+      statsEl.classList.remove("draggable");
+    }
+  });
+  window.addEventListener("blur", () => {
+    shiftHeld = false;
+    statsEl.classList.remove("draggable");
+    if (hudDrag) finishHudDrag();
+  });
+
+  statsEl.addEventListener("mousedown", (e) => {
+    if (!shiftHeld || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    hudDrag = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startLeft: statsEl.offsetLeft,
+      startTop: statsEl.offsetTop,
+    };
+    statsEl.classList.add("dragging");
+    statsEl.setPointerCapture(e.pointerId || 1);
+  });
+
+  window.addEventListener("mousemove", (e) => {
+    if (!hudDrag) return;
+    const dx = e.clientX - hudDrag.startX;
+    const dy = e.clientY - hudDrag.startY;
+    const newLeft = hudDrag.startLeft + dx;
+    const newTop = hudDrag.startTop + dy;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const xPct = Math.max(0, Math.min(100, (newLeft / vw) * 100));
+    const yPct = Math.max(0, Math.min(100, (newTop / vh) * 100));
+    statsEl.style.left = xPct + "%";
+    statsEl.style.top = yPct + "%";
+    statsEl.style.transform = "translate(-" + xPct + "%, -" + yPct + "%)";
+    statsEl.style.right = "auto";
+    statsEl.style.bottom = "auto";
+  });
+
+  window.addEventListener("mouseup", () => {
+    if (!hudDrag) return;
+    finishHudDrag();
+  });
+
+  function finishHudDrag() {
+    if (!hudDrag) return;
+    const rect = statsEl.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const xPct = Math.round(((rect.left + rect.width / 2) / vw) * 100 * 2) / 2;
+    const yPct = Math.round(((rect.top + rect.height / 2) / vh) * 100 * 2) / 2;
+    cfg.stats_x_pct = Math.max(0, Math.min(100, xPct));
+    cfg.stats_y_pct = Math.max(0, Math.min(100, yPct));
+    statsEl.classList.remove("dragging");
+    hudDrag = null;
+    placeStatsPanel();
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(JSON.stringify({
+          type: "config",
+          data: {
+            stats_x_pct: cfg.stats_x_pct,
+            stats_y_pct: cfg.stats_y_pct,
+          },
+        }));
+      } catch (_) {}
+    }
+  }
+
   window.addEventListener("resize", () => {
     applyPadLayout();
     placeStatsPanel();
@@ -1106,6 +1241,14 @@
   }
 
   applyConfig(cfg);
+  if (qs.get("debug") === "1") {
+    fpsEl = document.createElement("div");
+    fpsEl.id = "debug-fps";
+    fpsEl.style.cssText =
+      "position:fixed;bottom:4px;right:8px;color:#0f0;font:10px monospace;" +
+      "background:rgba(0,0,0,0.6);padding:2px 6px;border-radius:3px;pointer-events:none;z-index:999";
+    document.body.appendChild(fpsEl);
+  }
   connect();
   requestAnimationFrame(frame);
 

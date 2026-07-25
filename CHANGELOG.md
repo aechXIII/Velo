@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0] - 2026-07-25
+
+- Add Sensitivity and View zoom sliders to Motion
+- Update motion feel presets
+- Add discard button for dirty preset changes
+- Fix camera position reset in fixed view mode
+
 ## [1.1.5] - 2026-07-24
 
 - Increase max width and height for Size to 3840x2160

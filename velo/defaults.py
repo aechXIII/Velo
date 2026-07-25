@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 APP_NAME = "Velo"
-APP_VERSION = "1.1.5"
+APP_VERSION = "1.2.0"
 PRESET_CLIP_PREFIX = "VELO1."
 
 PRESET_EXCLUDE = frozenset(
@@ -56,19 +56,19 @@ STATS_UPDATE_HZ = {
 
 FEEL_PRESETS: Dict[str, Dict[str, Any]] = {
     "tight": {
-        "motion_scale": 0.85,
+        "motion_scale": 1.4,
         "motion_ease": 0.08,
-        "camera_lag": 0.1,
+        "camera_lag": 0.05,
     },
     "normal": {
-        "motion_scale": 0.55,
-        "motion_ease": 0.35,
-        "camera_lag": 0.25,
+        "motion_scale": 1.0,
+        "motion_ease": 0.2,
+        "camera_lag": 0.15,
     },
     "soft": {
-        "motion_scale": 0.4,
-        "motion_ease": 0.5,
-        "camera_lag": 0.38,
+        "motion_scale": 0.55,
+        "motion_ease": 0.45,
+        "camera_lag": 0.3,
     },
 }
 
@@ -239,10 +239,12 @@ DEFAULTS: Dict[str, Any] = {
     "invert_y": False,
     "sensitivity": 1.0,
     "view_mode": "infinite",
-    "camera_lag": 0.25,
+    "camera_lag": 0.15,
     "camera_look_ahead": 0.0,
-    "motion_scale": 0.55,
-    "motion_ease": 0.35,
+    "camera_follow": 1.0,
+    "view_zoom": 1.0,
+    "motion_scale": 1.0,
+    "motion_ease": 0.2,
     "motion_feel": "normal",
     "target_fps": 60,
     "render_quality": "balanced",

@@ -24,8 +24,9 @@
   let cfg = {
     capture_mode: "relative",
     view_mode: "infinite",
-    camera_lag: 0.28,
-    motion_scale: 0.55,
+    camera_lag: 0.15,
+    view_zoom: 1,
+    motion_scale: 1,
     motion_ease: 0.35,
     motion_feel: "normal",
     target_fps: 60,
@@ -368,12 +369,25 @@
   function applyConfig(next) {
     if (!next || typeof next !== "object") return;
     cfg = { ...cfg, ...next };
+    if (cfg.view_mode === "wrap") cfg.view_mode = "infinite";
     if (previewLite) {
       cfg.target_fps = Math.min(Number(cfg.target_fps) || 60, 30);
       cfg.trail_glow = false;
       cfg.trail_samples = 1;
       cfg.trail_curve = Math.min(Number(cfg.trail_curve) || 0, 0.25);
       cfg.trail_max_points = Math.min(Number(cfg.trail_max_points) || 120, 64);
+    }
+    if (pw > 0 && ph > 0 && viewMode() === "fixed") {
+      tx = Math.max(0, Math.min(pw, tx));
+      ty = Math.max(0, Math.min(ph, ty));
+      wx = Math.max(0, Math.min(pw, wx));
+      wy = Math.max(0, Math.min(ph, wy));
+      swx = wx;
+      swy = wy;
+      camX = 0;
+      camY = 0;
+      camTx = 0;
+      camTy = 0;
     }
     colorCache.clear();
     applyPadLayout();
@@ -523,9 +537,33 @@
     return n < 1000 ? n.toFixed(1) : String(Math.round(n));
   }
 
+  function viewMode() {
+    const m = cfg.view_mode === "wrap" ? "infinite" : cfg.view_mode;
+    if (m === "fixed") return "fixed";
+    return "infinite";
+  }
+
+  function isPanView() {
+    return viewMode() === "infinite";
+  }
+
+  function viewZoom() {
+    const z = Number(cfg.view_zoom);
+    if (!Number.isFinite(z) || z <= 0) return 1;
+    return Math.max(0.25, Math.min(1.5, z));
+  }
+
   function updateCameraTarget() {
-    camTx = wx - pw / 2;
-    camTy = wy - ph / 2;
+    if (!isPanView()) {
+      camTx = 0;
+      camTy = 0;
+      return;
+    }
+    const z = viewZoom();
+    const viewW = pw / z;
+    const viewH = ph / z;
+    camTx = wx - viewW / 2;
+    camTy = wy - viewH / 2;
   }
 
   let lastGridOx = null;
@@ -534,8 +572,9 @@
   function updateGridOffset() {
     if (!cfg.pad_grid || !padGridPat) return;
     const g = Math.max(4, Math.round(Number(cfg.pad_grid_size) || 40));
-    let ox = ((-camX % g) + g) % g;
-    let oy = ((-camY % g) + g) % g;
+    const z = isPanView() ? viewZoom() : 1;
+    let ox = (((-camX * z) % g) + g) % g;
+    let oy = (((-camY * z) % g) + g) % g;
     ox = Math.round(ox);
     oy = Math.round(oy);
     if (ox === lastGridOx && oy === lastGridOy) return;
@@ -563,20 +602,31 @@
     if (points.length > maxP) points.splice(0, points.length - maxP);
   }
 
+  const MOTION_SCALE_MIN = 0.01;
+  const MOTION_SCALE_MAX = 3;
+
   function motionScale() {
     const s = Number(cfg.motion_scale);
-    return Number.isFinite(s) && s > 0 ? Math.max(0.05, Math.min(3, s)) : 0.5;
+    if (!Number.isFinite(s) || s <= 0) return 1;
+    return Math.max(MOTION_SCALE_MIN, Math.min(MOTION_SCALE_MAX, s));
+  }
+
+  function padMotionGain() {
+    const areaScale = Math.sqrt((Math.max(1, pw) * Math.max(1, ph)) / (300 * 200));
+    return 0.05 * motionScale() * areaScale;
   }
 
   function applyMotionDelta(mdx, mdy, t, dt) {
-    const infinite = (cfg.view_mode || "infinite") === "infinite";
+    const mode = viewMode();
     const speed = Math.hypot(mdx, mdy) / Math.max(dt, 1e-4);
     tx += mdx;
     ty += mdy;
-    if (!infinite) {
+
+    if (mode === "fixed") {
       tx = Math.max(0, Math.min(pw, tx));
       ty = Math.max(0, Math.min(ph, ty));
     }
+
     const ease = Math.max(0, Math.min(0.95, Number(cfg.motion_ease) || 0));
     if (ease <= 0.01) {
       wx = tx;
@@ -594,8 +644,8 @@
     const dx = Number(msg.dx) || 0;
     const dy = Number(msg.dy) || 0;
     const mode = cfg.capture_mode || "relative";
-    const infinite = (cfg.view_mode || "infinite") === "infinite";
-    const mScale = motionScale();
+    const vmode = viewMode();
+    const gain = padMotionGain();
 
     if (mode === "absolute" && msg.x != null && msg.y != null) {
       const sw = window.screen.width || window.innerWidth;
@@ -603,28 +653,27 @@
       const nx = (msg.x / sw) * pw;
       const ny = (msg.y / sh) * ph;
       const dt = Math.max(t - lastMoveT, 1e-4);
-      if (infinite) {
+      if (vmode === "infinite") {
         if (handleMouse._lx != null) {
-          const mdx = ((msg.x - handleMouse._lx) / sw) * pw * 2.2 * mScale;
-          const mdy = ((msg.y - handleMouse._ly) / sh) * ph * 2.2 * mScale;
+          const mdx = (msg.x - handleMouse._lx) * gain;
+          const mdy = (msg.y - handleMouse._ly) * gain;
           applyMotionDelta(mdx, mdy, t, dt);
         }
         handleMouse._lx = msg.x;
         handleMouse._ly = msg.y;
       } else {
-        tx = nx;
-        ty = ny;
-        wx = nx;
-        wy = ny;
+        tx = Math.max(0, Math.min(pw, nx));
+        ty = Math.max(0, Math.min(ph, ny));
+        wx = tx;
+        wy = ty;
         lastMoveT = t;
         if (cfg.trail_enabled) pushPoint(wx, wy, t, 0);
       }
       lastMoveT = t;
     } else if (dx !== 0 || dy !== 0) {
-      const padScale = Math.min(pw, ph) / 480;
-      const mdx = dx * padScale * mScale;
-      const mdy = dy * padScale * mScale;
       const dt = Math.max(t - lastMoveT, 1e-4);
+      const mdx = dx * gain;
+      const mdy = dy * gain;
       applyMotionDelta(mdx, mdy, t, dt);
     }
 
@@ -681,7 +730,9 @@
   }
 
   function worldToScreen(x, y) {
-    return { x: x - camX, y: y - camY };
+    if (!isPanView()) return { x, y };
+    const z = viewZoom();
+    return { x: (x - camX) * z, y: (y - camY) * z };
   }
 
   function offscreen(a, b) {
@@ -712,8 +763,7 @@
     if (points.length > 0) return true;
     if (clicks.length > 0) return true;
     if (Math.hypot(tx - wx, ty - wy) > 0.08) return true;
-    const infinite = (cfg.view_mode || "infinite") === "infinite";
-    if (infinite) {
+    if (isPanView()) {
       const lag = Math.max(0, Math.min(0.95, Number(cfg.camera_lag) || 0));
       if (lag > 0.001 && Math.hypot(camTx - camX, camTy - camY) > 0.08) return true;
     }
@@ -952,8 +1002,7 @@
 
     stepMotionEase(dt);
 
-    const infinite = (cfg.view_mode || "infinite") === "infinite";
-    if (infinite) {
+    if (isPanView()) {
       updateCameraTarget();
       const lag = Math.max(0, Math.min(0.95, Number(cfg.camera_lag) || 0));
       if (lag <= 0.001) {

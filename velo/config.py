@@ -136,7 +136,12 @@ class ConfigStore:
                             merged["update_check_mode"] = (
                                 "off" if raw.get("check_for_updates") is False else "launch"
                             )
-                        self._data = merged
+                        if merged.get("view_mode") == "wrap":
+                            merged["view_mode"] = "infinite"
+                            self._data = merged
+                            self._write_unlocked()
+                        else:
+                            self._data = merged
                 except (json.JSONDecodeError, OSError):
                     self._data = deepcopy(DEFAULTS)
             if not self._data.get("auth_token"):

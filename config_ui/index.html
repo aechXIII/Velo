@@ -62,6 +62,7 @@
               <div class="dirty-actions">
                 <button type="button" class="btn btn-sm" id="btn-dirty-update" hidden>Update</button>
                 <button type="button" class="btn btn-sm btn-ghost" id="btn-dirty-save">Save as new</button>
+                <button type="button" class="btn btn-sm btn-ghost" id="btn-dirty-discard">Discard</button>
               </div>
             </div>
 
@@ -206,21 +207,28 @@
             </div>
             <div class="slider" data-slider>
               <div class="slider-h">
-                <span>On-screen scale <span class="info" tabindex="0" data-tip="How far the trail moves on the pad for a given flick. Lower = calmer look. Overlay only.">i</span></span>
-                <input type="number" class="val-input" data-link="motion_scale" step="0.05" />
+                <span>Sensitivity <span class="info" tabindex="0" data-tip="How far the trail moves for a flick. Lower = smaller distance.">i</span></span>
+                <input type="number" class="val-input" data-link="motion_scale" min="0.01" max="3" step="0.01" />
               </div>
-              <input type="range" data-key="motion_scale" min="0.1" max="2" step="0.05" />
+              <input type="range" data-key="motion_scale" min="0.01" max="3" step="0.01" />
+            </div>
+            <div class="slider" data-slider data-pan-only>
+              <div class="slider-h">
+                <span>View zoom <span class="info" tabindex="0" data-tip="In infinite pan: zoom out to see more of the trail. Lower = more zoomed out.">i</span></span>
+                <input type="number" class="val-input" data-link="view_zoom" min="0.25" max="1.5" step="0.05" />
+              </div>
+              <input type="range" data-key="view_zoom" min="0.25" max="1.5" step="0.05" />
             </div>
             <div class="slider" data-slider>
               <div class="slider-h">
-                <span>Motion ease <span class="info" tabindex="0" data-tip="How gently the cursor catches up. Higher values make flicks draw out instead of snapping.">i</span></span>
+                <span>Motion smoothening <span class="info" tabindex="0" data-tip="Smooths movement. Higher = softer, more drawn-out flicks.">i</span></span>
                 <input type="number" class="val-input" data-link="motion_ease" step="0.01" />
               </div>
               <input type="range" data-key="motion_ease" min="0" max="0.9" step="0.01" />
             </div>
-            <div class="slider" data-slider>
+            <div class="slider" data-slider data-pan-only>
               <div class="slider-h">
-                <span>Camera lag <span class="info" tabindex="0" data-tip="In infinite pan mode, how slowly the pad follows the cursor. 0 = locked on.">i</span></span>
+                <span>Camera lag <span class="info" tabindex="0" data-tip="In infinite pan: how slowly the view follows the cursor. 0 = locked on.">i</span></span>
                 <input type="number" class="val-input" data-link="camera_lag" step="0.01" />
               </div>
               <input type="range" data-key="camera_lag" min="0" max="0.9" step="0.01" />
@@ -228,9 +236,9 @@
             <div class="field">
               <label>
                 View
-                <span class="info" tabindex="0" data-tip="Infinite pan: keep moving any direction, the pad scrolls with you. Fixed: classic pad bounds.">i</span>
+                <span class="info" tabindex="0" data-tip="Infinite pan: the pad scrolls with you. Fixed: stop at the edges.">i</span>
               </label>
-              <select data-key="view_mode">
+              <select data-key="view_mode" id="view-mode">
                 <option value="infinite">Infinite pan</option>
                 <option value="fixed">Fixed pad</option>
               </select>
@@ -241,7 +249,7 @@
                 <span class="info" tabindex="0" data-tip="Relative: best for games and aim trainers. Absolute: desktop cursor position.">i</span>
               </label>
               <select data-key="capture_mode">
-                <option value="relative">Relative (game / aim)</option>
+                <option value="relative">Relative</option>
                 <option value="absolute">Absolute (desktop)</option>
               </select>
             </div>

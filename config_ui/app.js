@@ -38,9 +38,9 @@
   let presetExclude = new Set();
 
   const FEEL_HINTS = {
-    tight: "Faster / larger on the pad",
+    tight: "Faster / snappier",
     normal: "Default balance",
-    soft: "Slower, smoother look",
+    soft: "Slower / smoother",
     custom: "Custom values",
   };
 
@@ -61,6 +61,7 @@
   const dirtyLabel = $("preset-dirty-label");
   const btnDirtyUpdate = $("btn-dirty-update");
   const btnDirtySave = $("btn-dirty-save");
+  const btnDirtyDiscard = $("btn-dirty-discard");
   const btnPresetUpdate = $("btn-preset-update");
 
   function toast(msg) {
@@ -328,6 +329,14 @@
     if (hint) hint.textContent = FEEL_HINTS[feel] || FEEL_HINTS.custom;
   }
 
+  function updateViewModeUi() {
+    const mode = cfg.view_mode === "wrap" ? "infinite" : cfg.view_mode || "infinite";
+    const pan = mode !== "fixed";
+    document.querySelectorAll("[data-pan-only]").forEach((el) => {
+      el.hidden = !pan;
+    });
+  }
+
   function updateObsSetupUi() {
     const done = !!cfg.ui_obs_setup_done;
     const card = $("obs-setup-card");
@@ -425,6 +434,8 @@
     setColor("click-color-right", colors.right);
     setColor("click-color-middle", colors.middle);
     setColor("click-color-side", colors.x1 || colors.x2 || "#aaaaaa");
+    updateFeelUi();
+    updateViewModeUi();
 
     const clickShow = cfg.click_show || {};
     const setClickShow = (id, on) => {
@@ -877,8 +888,18 @@
     });
     suppress = false;
 
-    if ("motion_feel" in patch || "motion_scale" in patch || "motion_ease" in patch || "camera_lag" in patch) {
+    if (
+      "motion_feel" in patch ||
+      "motion_scale" in patch ||
+      "motion_ease" in patch ||
+      "camera_lag" in patch ||
+      "view_zoom" in patch
+    ) {
       updateFeelUi();
+    }
+    if ("view_mode" in patch) {
+      if (patch.view_mode === "wrap") patch.view_mode = "infinite";
+      updateViewModeUi();
     }
     if ("speed_colorize" in patch) updateTrailColorUi();
     if ("start_with_windows" in patch || "start_minimized" in patch) {
@@ -1065,7 +1086,7 @@
     renderPresetList();
   }
 
-  async function applyPreset(name, kind) {
+  async function applyPreset(name, kind, opts) {
     selectedPreset = { name, kind };
     try {
       const res = await api("/api/config/preset", {
@@ -1079,7 +1100,7 @@
       bindForm();
       capturePresetBaseline();
       loadPreview();
-      toast(name);
+      if (!(opts && opts.silent)) toast(name);
       await refreshPresets();
     } catch (e) {
       toast("Couldn't load preset");
@@ -1352,6 +1373,7 @@
     const res = await api("/api/config");
     if (!res.ok) throw new Error("config");
     cfg = await res.json();
+    if (cfg.view_mode === "wrap") cfg.view_mode = "infinite";
     await refreshPresets();
     previewMode = cfg.ui_preview_mode || "lite";
     if (previewModeEl) previewModeEl.value = previewMode;
@@ -1724,6 +1746,18 @@
     }
     savePresetAs();
   });
+  if (btnDirtyDiscard) {
+    btnDirtyDiscard.addEventListener("click", async () => {
+      const name = selectedPreset.name || cfg.active_preset || "";
+      const kind = selectedPreset.kind || cfg.active_preset_kind || "builtin";
+      if (!name) {
+        toast("No preset selected");
+        return;
+      }
+      await applyPreset(name, kind, { silent: true });
+      toast("Changes discarded");
+    });
+  }
   $("btn-reload").addEventListener("click", loadPreview);
   if (previewModeEl) {
     previewModeEl.addEventListener("change", (e) => {

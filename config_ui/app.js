@@ -24,6 +24,130 @@
     "21:9": 21 / 9,
   };
 
+  const SECTION_KEYS = {
+    presets: [],
+    size: ["canvas_aspect", "canvas_width", "canvas_height"],
+    background: ["pad_shape", "pad_radius", "pad_bg_enabled", "pad_bg_color", "pad_bg_opacity", "pad_blur", "pad_border_enabled", "pad_border_color", "pad_border_opacity", "pad_border_width", "pad_shadow", "pad_shadow_opacity", "pad_grid", "pad_grid_size", "pad_grid_thickness", "pad_grid_color", "pad_grid_opacity", "pad_vignette", "pad_vignette_opacity", "pad_clip_trail", "source_bg_enabled", "source_bg_color", "source_bg_opacity", "overlay_opacity"],
+    motion: ["capture_mode", "invert_y", "sensitivity", "view_mode", "camera_lag", "camera_look_ahead", "camera_follow", "view_zoom", "motion_scale", "motion_ease", "motion_feel"],
+    trail: ["trail_enabled", "trail_lifetime_ms", "trail_max_points", "trail_width", "trail_glow", "trail_glow_blur", "trail_glow_opacity", "trail_glow_width", "trail_glow_custom_color", "trail_glow_custom_color_val", "trail_min_distance", "trail_smoothing", "trail_curve", "trail_samples", "fade_style", "trail_color", "speed_colorize", "speed_stops", "speed_max", "speed_min"],
+    cursor: ["show_cursor_dot", "cursor_dot_size", "cursor_dot_color", "cursor_dot_opacity", "show_clicks", "click_lifetime_ms", "click_radius", "click_line_width", "click_opacity", "click_expand", "click_style", "click_show", "click_colors"],
+    hud: ["show_stats", "stats_opacity", "stats_bg", "stats_border", "stats_x_pct", "stats_y_pct", "stats_show_speed", "stats_show_peak", "stats_show_cps", "stats_show_clicks", "stats_show_distance", "stats_units", "stats_dpi", "stats_update_rate", "hud_show_avg_speed", "hud_show_sparkline", "chart_color"],
+    performance: ["render_quality", "target_fps", "ws_send_hz", "trail_max_points", "trail_samples"],
+    obs: [],
+    settings: [],
+  };
+
+  const DEFAULT_CFG = {
+    host: "[IP_ADDRESS]",
+    port: 27180,
+    auth_token: "",
+    capture_mode: "relative",
+    invert_y: false,
+    sensitivity: 1.0,
+    view_mode: "infinite",
+    camera_lag: 0.15,
+    camera_look_ahead: 0.0,
+    camera_follow: 1.0,
+    view_zoom: 1.0,
+    motion_scale: 1.0,
+    motion_ease: 0.2,
+    motion_feel: "normal",
+    target_fps: 60,
+    render_quality: "balanced",
+    ws_send_hz: 120,
+    trail_enabled: true,
+    trail_lifetime_ms: 1100,
+    trail_max_points: 120,
+    trail_width: 2.4,
+    trail_glow: true,
+    trail_glow_blur: 6,
+    trail_glow_opacity: 1.0,
+    trail_glow_width: 1.0,
+    trail_glow_custom_color: false,
+    trail_glow_custom_color_val: "#ffffff",
+    trail_min_distance: 1.2,
+    trail_smoothing: 0.0,
+    trail_curve: 0.55,
+    trail_samples: 2,
+    fade_style: "smooth",
+    trail_color: "#ffffff",
+    speed_min: 40.0,
+    speed_max: 3200.0,
+    speed_stops: [
+      { t: 0.0, color: "#ffffff" },
+      { t: 0.45, color: "#a0a0a0" },
+      { t: 0.75, color: "#ffcc66" },
+      { t: 1.0, color: "#ff4444" },
+    ],
+    speed_colorize: true,
+    show_cursor_dot: true,
+    cursor_dot_size: 4.5,
+    cursor_dot_color: "#ffffff",
+    cursor_dot_opacity: 0.95,
+    show_clicks: true,
+    click_lifetime_ms: 280,
+    click_radius: 16.0,
+    click_line_width: 1.5,
+    click_opacity: 0.85,
+    click_expand: true,
+    click_style: "ring",
+    click_show: { left: true, right: true, middle: true, side: true },
+    click_colors: { left: "#ffffff", right: "#cccccc", middle: "#888888", x1: "#aaaaaa", x2: "#aaaaaa" },
+    pad_shape: "rounded",
+    pad_radius: 12,
+    pad_bg_enabled: true,
+    pad_bg_color: "#0a0a0a",
+    pad_bg_opacity: 0.72,
+    pad_blur: false,
+    pad_border_enabled: true,
+    pad_border_color: "#ffffff",
+    pad_border_opacity: 0.12,
+    pad_border_width: 1.5,
+    pad_shadow: false,
+    pad_shadow_opacity: 0.4,
+    pad_grid: false,
+    pad_grid_size: 40,
+    pad_grid_thickness: 1.0,
+    pad_grid_color: "#ffffff",
+    pad_grid_opacity: 0.08,
+    pad_vignette: false,
+    pad_vignette_opacity: 0.3,
+    pad_clip_trail: true,
+    canvas_aspect: "16:9",
+    canvas_width: 640,
+    canvas_height: 360,
+    source_bg_enabled: false,
+    source_bg_color: "#000000",
+    source_bg_opacity: 0.0,
+    overlay_opacity: 1.0,
+    show_stats: false,
+    stats_opacity: 0.55,
+    stats_bg: true,
+    stats_border: true,
+    stats_x_pct: 0.0,
+    stats_y_pct: 100.0,
+    stats_show_speed: true,
+    stats_show_peak: false,
+    stats_show_cps: true,
+    stats_show_clicks: true,
+    stats_show_distance: true,
+    stats_units: "cm",
+    stats_dpi: 800,
+    stats_update_rate: "normal",
+    stats_reset_hotkey: "",
+    start_minimized: false,
+    start_with_windows: false,
+    update_check_mode: "launch",
+    show_onboarding: true,
+    hud_show_avg_speed: true,
+    hud_show_sparkline: true,
+    chart_color: "#a677ff",
+    accent_color: "#a277ff",
+    bg_color: "#0f0f0f",
+    backup_enabled: true,
+    backup_max_count: 10,
+  };
+
   let cfg = {};
   let presetInfo = { builtin: [], user: [], active: "", active_kind: "builtin" };
   let selectedPreset = { name: "", kind: "builtin" };
@@ -605,6 +729,30 @@
     if (persist) queuePatch({ ui_section: currentSection });
   }
 
+  function updateSectionDots() {
+    document.querySelectorAll(".sec-btn").forEach((btn) => {
+      var section = btn.dataset.section;
+      var keys = SECTION_KEYS[section];
+      if (!keys || !keys.length) {
+        btn.querySelector(".sec-dot").classList.remove("modified");
+        return;
+      }
+      var baseline = presetBaseline || DEFAULT_CFG;
+      var modified = keys.some(function (key) {
+        if (presetExclude.has(key)) return false;
+        var cur = cfg[key];
+        var def = baseline[key];
+        if (cur == null && def == null) return false;
+        if (cur == null || def == null) return true;
+        if (typeof cur === "object" || typeof def === "object") {
+          return JSON.stringify(cur) !== JSON.stringify(def);
+        }
+        return cur !== def;
+      });
+      btn.querySelector(".sec-dot").classList.toggle("modified", modified);
+    });
+  }
+
   function getFieldRows(section) {
     const rows = [];
     const children = section.children;
@@ -766,7 +914,7 @@
     for (let i = 0; i < 4; i++) {
       setColor("speed-stop-" + i, stops[i].color);
     }
-    updateTrailColorUi();
+updateTrailColorUi();
     updateGlowOptionsUi();
     updateHotkeyUi();
     updateStartupUi();
@@ -777,6 +925,7 @@
     updateObsSetupUi();
     renderPresetList();
     recomputePresetDirty();
+    updateSectionDots();
   }
 
   function updateStartupUi() {
@@ -1203,6 +1352,7 @@
       undoSnapshot = structuredClone(cfg);
     }
     Object.assign(cfg, patch);
+    updateSectionDots();
     if ("canvas_width" in patch || "canvas_height" in patch || "canvas_aspect" in patch) {
       maybeLockAspect(patch);
       updateSizeLabels();
@@ -1292,10 +1442,12 @@
       const data = await res.json();
       if (data.data) {
         cfg = data.data;
+        updateSectionDots();
         if ("render_quality" in patch || "motion_feel" in patch) bindForm();
         else {
           updateFeelUi();
           recomputePresetDirty();
+          updateSectionDots();
         }
       }
       updateSizeLabels();
@@ -1472,6 +1624,7 @@
       if (data.data) cfg = data.data;
       bindForm();
       capturePresetBaseline();
+      updateSectionDots();
       if (!(opts && opts.silent)) toast(name);
       await refreshPresets();
     } catch (e) {
@@ -1513,6 +1666,7 @@
       selectedPreset = { name, kind: "user" };
       bindForm();
       capturePresetBaseline();
+      updateSectionDots();
       toast("Saved " + name);
       await refreshPresets();
     } catch (e) {
@@ -1535,6 +1689,7 @@
       if (!res.ok || !data.ok) throw new Error(data.error || "update");
       if (data.data) cfg = data.data;
       capturePresetBaseline();
+      updateSectionDots();
       updateDirtyUi();
       toast("Updated " + selectedPreset.name);
       await refreshPresets();
@@ -1688,8 +1843,10 @@
     bindForm();
     applyAccentColors(cfg);
     capturePresetBaseline();
+    updateSectionDots();
     loadPreview();
     updateUndoRedoButtons();
+    document.getElementById("skeleton-loader")?.remove();
     if (!cfg.ui_obs_setup_done) {
       showSection("obs", false);
     }
@@ -2085,11 +2242,45 @@
       });
     });
   }
-  window.addEventListener("focus", () => {
-    if (previewAuto) loadPreview();
+  // Track iframe clicks to prevent blur-from-iframe hiding the preview
+  let clickingIframe = false;
+  frame.addEventListener("mousedown", () => { clickingIframe = true; });
+
+  // Handle actual tab/window hiding (browser tab switch)
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      if (previewAuto && !frame.hidden) {
+        frame.hidden = true;
+        if (previewViewport) previewViewport.classList.add("is-off");
+        if (previewOff) {
+          previewOff.hidden = false;
+          previewOff.classList.add("is-visible");
+        }
+      }
+    } else {
+      if (previewAuto && frame.hidden) loadPreview();
+    }
   });
+
+  // Handle pywebview window losing focus to another app
   window.addEventListener("blur", () => {
-    if (previewAuto) loadPreview();
+    if (previewAuto && !frame.hidden) {
+      if (clickingIframe) {
+        clickingIframe = false;
+        return;
+      }
+      frame.hidden = true;
+      if (previewViewport) previewViewport.classList.add("is-off");
+      if (previewOff) {
+        previewOff.hidden = false;
+        previewOff.classList.add("is-visible");
+      }
+    }
+  });
+
+  // Handle focus returning to the window
+  window.addEventListener("focus", () => {
+    if (previewAuto && frame.hidden) loadPreview();
   });
   $("checker").addEventListener("change", (e) => {
     stage.classList.toggle("plain", !e.target.checked);

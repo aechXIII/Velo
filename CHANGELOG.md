@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.1.0] - 2026-07-26
+
+### Added
+- Speed chart to HUD
+- Fade curve presets (6 options) for trail opacity
+- Auto-backup system with configurable retention
+- Section navigation dots showing unsaved changes
+- Loading skeleton while config loads
+- WebSocket keepalive to prevent connection drops
+
+### Fixed
+- stats_dpi range clamping (100-32000)
+- trail_curve interpolation capped at 2000
+- Server binding to all interfaces
+- Preview hiding on click
+
+### Changed
+- Updated scrollbar styling
+- Preview focus detection
+
+### Removed
+- Connection status indicator from overlay
+
 ## [2.0.1] - 2026-07-26
 
 ### Fixed

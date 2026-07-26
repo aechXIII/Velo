@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Tuple
 
 APP_NAME = "Velo"
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.1.0"
 PRESET_CLIP_PREFIX = "VELO1."
 PRESET_CLIP_PREFIX_V2 = "VELO2."
 
@@ -28,9 +28,12 @@ PRESET_EXCLUDE = frozenset(
         "stats_dpi",
         "stats_update_rate",
         "show_onboarding",
+        "hud_show_sparkline",
         "accent_color",
         "bg_color",
         "hidden_presets",
+        "backup_enabled",
+        "backup_max_count",
     }
 )
 
@@ -372,9 +375,13 @@ DEFAULTS: Dict[str, Any] = {
     "active_preset_kind": "builtin",
     "show_onboarding": True,
     "hud_show_avg_speed": True,
+    "hud_show_sparkline": True,
+    "chart_color": "#a677ff",
     "accent_color": "#a277ff",
     "bg_color": "#0f0f0f",
     "hidden_presets": [],
+    "backup_enabled": True,
+    "backup_max_count": 10,
 }
 
 # Config key -> alias mapping for VELO2 share codes
@@ -460,6 +467,7 @@ SHARE_ALIASES: Dict[str, Any] = {
     "stats_x_pct": "sxp",
     "stats_y_pct": "syp",
     "hud_show_avg_speed": "has",
+    "chart_color": "chcl",
 
     # Canvas / source
     "canvas_aspect": "ca",

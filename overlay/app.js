@@ -3,12 +3,10 @@
   const padGrid = document.getElementById("pad-grid");
   const padGridPat = document.getElementById("pad-grid-pat");
   const padVignette = document.getElementById("pad-vignette");
-  const padCrosshair = document.getElementById("pad-crosshair");
   const sourceBg = document.getElementById("source-bg");
   const canvas = document.getElementById("trail");
   const ctx = canvas.getContext("2d", { alpha: true, desynchronized: true });
   const statsEl = document.getElementById("stats");
-  const statusEl = document.getElementById("status");
   const sSpeed = document.getElementById("s-speed");
   const sPeak = document.getElementById("s-peak");
   const sCps = document.getElementById("s-cps");
@@ -129,7 +127,9 @@
     stats_units: "cm",
     stats_dpi: 800,
     hud_show_avg_speed: true,
-  };
+    hud_show_sparkline: true,
+chart_color: "#a677ff",
+};
 
   const CM_PER_INCH = 2.54;
 
@@ -177,6 +177,10 @@
 
   let speedSamples = 0;
   let accumulatedSpeed = 0;
+
+  let speedHistory = [];
+  const SPARKLINE_DURATION = 5;
+const SPARKLINE_MAX_POINTS = 100;
 
   function hexToRgb(hex) {
     if (colorCache.has(hex)) return colorCache.get(hex);
@@ -228,12 +232,15 @@
     return hexToRgb(stops[stops.length - 1].color);
   }
 
-  function fadeAlpha(age, life) {
+function fadeAlpha(age, life) {
     const u = Math.max(0, Math.min(1, 1 - age / life));
     const style = cfg.fade_style || "smooth";
     if (style === "linear") return u;
     if (style === "hard") return u > 0.1 ? 1 : u / 0.1;
-    return Math.pow(u, 1.35);
+    if (style === "ease-in") return 1 - Math.pow(1 - u, 2);
+    if (style === "ease-out") return u * u;
+    if (style === "snap") return u < 0.6 ? 1 : 1 - Math.pow((u - 0.6) / 0.4, 2);
+    return Math.pow(u, 1.35); // smooth
   }
 
   function catmull(p0, p1, p2, p3, t) {
@@ -353,17 +360,6 @@
       padVignette.style.borderRadius = br;
     }
 
-    padCrosshair.hidden = !cfg.pad_crosshair;
-    if (cfg.pad_crosshair) {
-      const size = Number(cfg.pad_crosshair_size) || 14;
-      padCrosshair.style.width = size + "px";
-      padCrosshair.style.height = size + "px";
-      padCrosshair.style.opacity = String(Number(cfg.pad_crosshair_opacity) ?? 0.14);
-      padCrosshair.querySelectorAll("span").forEach((el) => {
-        el.style.background = rgba(hexToRgb(cfg.pad_crosshair_color), 1);
-      });
-    }
-
     if (cfg.source_bg_enabled && Number(cfg.source_bg_opacity) > 0.001) {
       sourceBg.hidden = false;
       sourceBg.style.background = rgba(
@@ -389,6 +385,12 @@
       cfg.trail_samples = 1;
       cfg.trail_curve = Math.min(Number(cfg.trail_curve) || 0, 0.25);
       cfg.trail_max_points = Math.min(Number(cfg.trail_max_points) || 120, 64);
+    }
+    if (cfg.render_quality === "performance") {
+      cfg.trail_samples = Math.min(Number(cfg.trail_samples) || 2, 2);
+      cfg.trail_curve = Math.min(Number(cfg.trail_curve) || 0, 0.4);
+      cfg.trail_max_points = Math.min(Number(cfg.trail_max_points) || 120, 80);
+      cfg.trail_glow = false;
     }
     if (pw > 0 && ph > 0 && viewMode() === "fixed") {
       tx = Math.max(0, Math.min(pw, tx));
@@ -465,6 +467,7 @@
     setStatRow("distance", truthyFlag(cfg.stats_show_distance, true));
     setStatRow("clicks", truthyFlag(cfg.stats_show_clicks, true));
     setStatRow("cps", truthyFlag(cfg.stats_show_cps, true));
+    setStatRow("sparkline", truthyFlag(cfg.hud_show_sparkline, true));
 
     const units = cfg.stats_units || "cm";
     const rateUnit = units === "raw" ? "" : units === "m" ? "m/s" : "cm/s";
@@ -526,6 +529,49 @@
     if (row) row.hidden = !visible;
   }
 
+  function drawSparkline() {
+    const canvas = document.getElementById("s-sparkline");
+    if (!canvas || !cfg.show_stats || !cfg.hud_show_sparkline || speedHistory.length < 2) return;
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width;
+    const h = canvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+
+    const values = speedHistory.map((p) => convertCounts(p.speed));
+    const max = Math.max(...values, 1);
+    const min = 0;
+    const range = max - min || 1;
+
+    ctx.beginPath();
+    const chartColor = cfg.chart_color || "#a677ff";
+    const chartRgb = hexToRgb(chartColor);
+    ctx.strokeStyle = rgba(chartRgb, 0.7);
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+
+    const padding = 2;
+    const drawW = w - padding * 2;
+    const drawH = h - padding * 2;
+
+    for (let i = 0; i < values.length; i++) {
+      const x = padding + (i / (values.length - 1)) * drawW;
+      const y = padding + drawH - ((values[i] - min) / range) * drawH;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    const lastX = padding + drawW;
+    const lastY = padding + drawH - ((values[values.length - 1] - min) / range) * drawH;
+    ctx.lineTo(lastX, padding + drawH);
+    ctx.lineTo(padding, padding + drawH);
+    ctx.closePath();
+    ctx.fillStyle = rgba(chartRgb, 0.08);
+    ctx.fill();
+  }
+
   function mouseDpi() {
     const dpi = Number(cfg.stats_dpi);
     return Number.isFinite(dpi) && dpi > 0 ? dpi : 800;
@@ -538,6 +584,18 @@
     const cm = (n / mouseDpi()) * CM_PER_INCH;
     if (units === "m") return cm / 100;
     return cm;
+  }
+
+  function recordSpeedSample(speed) {
+    const now = performance.now() / 1000;
+    speedHistory.push({ t: now, speed });
+    if (speedHistory.length > SPARKLINE_MAX_POINTS) {
+      speedHistory.shift();
+    }
+    const cutoff = now - SPARKLINE_DURATION;
+    while (speedHistory.length > 0 && speedHistory[0].t < cutoff) {
+      speedHistory.shift();
+    }
   }
 
   function formatStat(value, isRate) {
@@ -799,6 +857,7 @@
     if (!(curve > 0.05 && samples > 1 && screen.length >= 2)) return screen;
 
     const path = [];
+    const maxInterpolated = 2000;
     for (let i = 0; i < screen.length - 1; i++) {
       const p0 = screen[Math.max(0, i - 1)];
       const p1 = screen[i];
@@ -806,6 +865,7 @@
       const p3 = screen[Math.min(screen.length - 1, i + 2)];
       const segs = Math.max(1, Math.round(samples * curve));
       for (let s = 0; s < segs; s++) {
+        if (path.length >= maxInterpolated) break;
         const u = s / segs;
         const cx = catmull(p0.x, p1.x, p2.x, p3.x, u);
         const cy = catmull(p0.y, p1.y, p2.y, p3.y, u);
@@ -818,6 +878,7 @@
           speed: lerp(p1.speed, p2.speed, u),
         });
       }
+      if (path.length >= maxInterpolated) break;
     }
     path.push(screen[screen.length - 1]);
     return path;
@@ -1062,6 +1123,7 @@
       drawTrail(now);
       drawClicks(now);
       drawCursor();
+      drawSparkline();
 
       needsDraw = isAnimating(now);
     } catch (e) {
@@ -1081,11 +1143,6 @@
 
   function qsToken() {
     return new URL(window.location.href).searchParams.get("token") || "";
-  }
-  function setStatus(text, kind) {
-    statusEl.textContent = text;
-    statusEl.classList.remove("ok", "err");
-    if (kind) statusEl.classList.add(kind);
   }
   function normalizeTime(msg) {
     const out = { ...msg };
@@ -1119,6 +1176,10 @@
       const avgSpeed = speedSamples > 0 ? (accumulatedSpeed / speedSamples) : 0;
       sAvgSpeed.textContent = formatStat(convertCounts(avgSpeed), true);
     }
+    if (cfg.hud_show_sparkline !== false) {
+      recordSpeedSample(data.speed || 0);
+      drawSparkline();
+    }
   }
 
   function connect() {
@@ -1126,21 +1187,20 @@
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const q = token ? `?token=${encodeURIComponent(token)}` : "";
     if (ws) try { ws.close(); } catch (_) {}
-    setStatus("Connecting");
     ws = new WebSocket(`${proto}://${location.host}/ws${q}`);
-    ws.onopen = () => setStatus("Live", "ok");
+    // Server sends periodic pings to detect dropped connections;
+    // the browser's WebSocket implementation handles pong responses automatically.
+    ws.onopen = () => {};
     ws.onclose = () => {
-      setStatus("Reconnecting", "err");
       clearTimeout(reconnectTimer);
       reconnectTimer = setTimeout(connect, 900);
     };
-    ws.onerror = () => setStatus("Connection error", "err");
+    ws.onerror = () => {};
     ws.onmessage = (ev) => {
       let msg;
       try { msg = JSON.parse(ev.data); } catch (_) { return; }
       if (msg.type === "hello" || msg.type === "config") {
         applyConfig(msg.data || {});
-        setStatus("Live", "ok");
       } else if (msg.type === "mouse") {
         handleMouse(normalizeTime(msg));
       } else if (msg.type === "stats") {

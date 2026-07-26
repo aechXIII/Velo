@@ -28,6 +28,7 @@ SCHEMA: dict[str, tuple[type, Any | None, Any | None, str]] = {
     "pad_grid_size": (int, 1, 200, "Grid cell size"),
     "pad_grid_opacity": (float, 0.0, 1.0, "Grid opacity"),
     "pad_grid_color": (str, None, None, "Grid color"),
+    "pad_crosshair_size": (int, 4, 64, "Crosshair size in pixels"),
     "pad_vignette": (bool, None, None, "Show vignette"),
     "pad_vignette_opacity": (float, 0.0, 1.0, "Vignette opacity"),
     "pad_shadow": (bool, None, None, "Show pad shadow"),
@@ -50,7 +51,7 @@ SCHEMA: dict[str, tuple[type, Any | None, Any | None, str]] = {
     "trail_glow_width": (float, 0.5, 3.0, "Glow width multiplier"),
     "trail_glow_custom_color": (bool, None, None, "Use fixed glow color"),
     "trail_glow_custom_color_val": (str, None, None, "Glow color when custom is on"),
-    "trail_fade_style": (str, None, None, "Fade style: smooth, hard, linear"),
+    "trail_fade_style": (str, None, None, "Fade style: smooth, ease-in, ease-out, linear, snap, hard"),
     "trail_curve_smoothing": (float, 0.0, 1.0, "Curve smoothing amount"),
     "trail_min_segment": (int, 1, 50, "Min segment length"),
 
@@ -80,6 +81,8 @@ SCHEMA: dict[str, tuple[type, Any | None, Any | None, str]] = {
     "motion_camera_lag": (float, 0.0, 1.0, "Camera lag amount"),
     "view_mode": (str, None, None, "View mode: infinite, fixed"),
 
+    "stats_dpi": (int, 100, 32000, "Mouse DPI for stats conversion"),
+
     "hud_show": (bool, None, None, "Show HUD"),
     "hud_position_x": (int, 0, 10000, "HUD X position"),
     "hud_position_y": (int, 0, 10000, "HUD Y position"),
@@ -92,6 +95,8 @@ SCHEMA: dict[str, tuple[type, Any | None, Any | None, str]] = {
     "hud_show_distance": (bool, None, None, "Show distance stat"),
     "hud_show_clicks": (bool, None, None, "Show click count"),
     "hud_show_cps": (bool, None, None, "Show clicks per second"),
+    "hud_show_sparkline": (bool, None, None, "Show speed sparkline chart"),
+    "chart_color": (str, None, None, "Speed chart line color"),
     "hud_update_rate": (float, 0.016, 1.0, "HUD update rate in seconds"),
 
     "fps_limit": (int, 15, 240, "FPS limit for overlay"),
@@ -110,6 +115,9 @@ SCHEMA: dict[str, tuple[type, Any | None, Any | None, str]] = {
     "last_preset": (str, None, None, "Last used preset name"),
     "language": (str, None, None, "UI language code"),
     "theme": (str, None, None, "UI theme"),
+
+    "backup_enabled": (bool, None, None, "Enable automatic config backups"),
+    "backup_max_count": (int, 1, 50, "Maximum number of backup files to keep"),
 }
 
 

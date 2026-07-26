@@ -302,7 +302,9 @@ class VeloServer:
         app.router.add_post("/api/onboarding/dismiss", self._handle_onboarding_dismiss)
         app.router.add_get("/ws", self._handle_ws)
 
-        host = self.config.get("host") or "127.0.0.1"
+        host = self.config.get("host") or "0.0.0.0"
+        if not host or host in ("0.0.0.0", "::"):
+            host = "0.0.0.0"
         port = int(self.config.get("port") or 27180)
 
         self._runner = web.AppRunner(app, access_log=None)
@@ -906,6 +908,16 @@ class VeloServer:
             )
         )
 
+        async def _ping_loop() -> None:
+            try:
+                while True:
+                    await asyncio.sleep(15)
+                    await ws.ping()
+            except asyncio.CancelledError:
+                pass
+
+        ping_task = asyncio.create_task(_ping_loop())
+
         try:
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:
@@ -923,6 +935,7 @@ class VeloServer:
                 elif msg.type in (WSMsgType.ERROR, WSMsgType.CLOSE):
                     break
         finally:
+            ping_task.cancel()
             with self._lock:
                 self._clients.discard(ws)
         return ws

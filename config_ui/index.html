@@ -79,6 +79,27 @@
         </div>
         <div class="search-empty" id="search-empty" hidden>No matching settings</div>
         <div class="scroll">
+          <div class="skeleton-loader" id="skeleton-loader">
+            <div class="skeleton-row">
+              <div class="skeleton-label"></div>
+              <div class="skeleton-control"></div>
+            </div>
+            <div class="skeleton-row">
+              <div class="skeleton-label"></div>
+              <div class="skeleton-control"></div>
+            </div>
+            <div class="skeleton-row">
+              <div class="skeleton-label"></div>
+              <div class="skeleton-row2">
+                <div class="skeleton-control half"></div>
+                <div class="skeleton-control half"></div>
+              </div>
+            </div>
+            <div class="skeleton-row">
+              <div class="skeleton-label"></div>
+              <div class="skeleton-control half" style="width:60%"></div>
+            </div>
+          </div>
           <section class="block sec" data-section="presets">
             <h2>Presets</h2>
             <div class="preset-browser" id="preset-list"></div>
@@ -355,6 +376,17 @@
               </div>
               <input type="range" data-key="trail_curve" min="0" max="1" step="0.01" />
 </div>
+            <div class="field">
+              <label>Fade curve</label>
+              <select data-key="fade_style">
+                <option value="smooth">Smooth</option>
+                <option value="ease-in">Ease In</option>
+                <option value="ease-out">Ease Out</option>
+                <option value="linear">Linear</option>
+                <option value="snap">Snap</option>
+                <option value="hard">Hard</option>
+              </select>
+            </div>
             <h3 class="subhead">Glow</h3>
             <div id="glow-options">
               <div class="slider" data-slider>
@@ -564,6 +596,17 @@
                   <span class="track"></span>
                 </label>
               </div>
+              <div class="toggle-row">
+                <span class="label">Speed chart</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="hud_show_sparkline" />
+                  <span class="track"></span>
+                </label>
+              </div>
+            </div>
+            <div class="field">
+              <label>Chart color</label>
+              <input type="color" data-key="chart_color" />
             </div>
             <div class="field">
               <label>Units</label>
@@ -757,6 +800,21 @@
             <p class="note err-text" id="update-error" hidden></p>
 
             <h3 class="subhead">Backup</h3>
+            <div class="toggle-row">
+              <span class="label">Auto backup</span>
+              <label class="toggle">
+                <input type="checkbox" data-key="backup_enabled" />
+                <span class="track"></span>
+              </label>
+            </div>
+            <div class="slider" data-slider data-key-parent="backup_enabled">
+              <div class="slider-h">
+                <span>Max backups</span>
+                <input type="number" class="val-input" data-link="backup_max_count" min="1" max="50" />
+              </div>
+              <input type="range" data-key="backup_max_count" min="1" max="50" step="1" />
+            </div>
+
             <p class="note">Config folder: <span class="mono">%APPDATA%\Velo</span></p>
             <button type="button" class="btn btn-block" id="btn-export">Export settings</button>
             <button type="button" class="btn btn-block btn-ghost" id="btn-import">Import settings</button>

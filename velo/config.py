@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import base64
 import binascii
+import datetime
 import json
 import secrets
+import shutil
 import threading
 import zlib
 from copy import deepcopy
@@ -168,6 +170,23 @@ class ConfigStore:
             encoding="utf-8",
         )
         tmp.replace(self._path)
+        self._rotate_backups()
+
+    def _rotate_backups(self) -> None:
+        if not self._data.get("backup_enabled", True):
+            return
+        backup_dir = config_dir() / "backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+
+        if self._path.exists():
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = backup_dir / f"config_{timestamp}.json"
+            shutil.copy2(str(self._path), str(backup_path))
+
+        max_backups = int(self._data.get("backup_max_count", 10))
+        backup_files = sorted(backup_dir.glob("config_*.json"), reverse=True)
+        for old in backup_files[max_backups:]:
+            old.unlink(missing_ok=True)
 
     def snapshot(self) -> Dict[str, Any]:
         with self._lock:

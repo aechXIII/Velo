@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.1] - 2026-07-26
+
+### Fixed
+- Window not focusing when launched again
+
+### Changed
+- Simplified onboarding wizard
+
+### Added
+- OBS cache refresh tip in settings footer
+
 ## [2.0.0] - 2026-07-25
 
 ### Added

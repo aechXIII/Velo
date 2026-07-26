@@ -2238,7 +2238,7 @@
   let onboardingSelectedPreset = null;
 
   const ONBOARDING_PRESETS = [
-    { name: "16:9 pad", label: "Standard 16:9", desc: "Good for most streamers" },
+    { name: "16:9 pad", label: "Standard 16:9", desc: "Widescreen layout" },
     { name: "Square HUD", label: "Square HUD", desc: "Compact, shows stats" },
     { name: "Border only", label: "Border Only", desc: "Minimal, just the pad border" },
     { name: "Corner mini", label: "Corner Mini", desc: "Small, in the corner" },
@@ -2247,12 +2247,11 @@
   const ONBOARDING_STEPS = [
     {
       title: "Welcome to Velo!",
-      desc: "Set up your mouse input overlay for OBS in a few simple steps.",
+      desc: "Configure the overlay in a few steps.",
       render: function () {
         var url = overlayUrl();
         return (
-          '<p>Velo captures your mouse movement and displays it as a smooth trail overlay. ' +
-          'Perfect for streaming, tutorials, and aim training.</p>' +
+
           '<p><strong>1. Open OBS and add a Browser Source</strong></p>' +
           '<p><strong>2. Set the URL to:</strong></p>' +
           '<div class="onboarding-url">' + escapeHtml(url) + '</div>' +
@@ -2263,7 +2262,7 @@
     },
     {
       title: 'Choose Your Colors',
-      desc: 'Pick colors that match your stream style.',
+      desc: 'Choose your desired colors.',
       render: function () {
         var trailColor = cfg.trail_color || '#888888';
         var bgColor = cfg.pad_bg_color || '#1a1a1a';
@@ -2291,10 +2290,12 @@
         var html = '<div class="onboarding-preset-grid">';
         ONBOARDING_PRESETS.forEach(function (p) {
           var sel = onboardingSelectedPreset === p.name ? " selected" : "";
+          var rec = p.name === "16:9 pad" ? '<span class="recommended-badge">Recommended</span>' : "";
           html +=
             '<div class="onboarding-preset-card' + sel + '" data-preset="' + escapeHtml(p.name) + '">' +
             '<h4>' + escapeHtml(p.label) + '</h4>' +
             '<p>' + escapeHtml(p.desc) + '</p>' +
+            rec +
             '</div>';
         });
         html += '</div>';
@@ -2333,17 +2334,10 @@
       },
     },
     {
-      title: "You're All Set!",
-      desc: "Your overlay is ready to use. Here's what to do next:",
+      title: "",
+      desc: "",
       render: function () {
-        return (
-          '<div class="onboarding-done-list">' +
-          '<div class="onboarding-done-item"><span class="onboarding-check">✓</span> Go to OBS and see your overlay</div>' +
-          '<div class="onboarding-done-item"><span class="onboarding-check">✓</span> Right-click the tray icon for quick options</div>' +
-          '<div class="onboarding-done-item"><span class="onboarding-check">✓</span> Come back here anytime to tweak settings</div>' +
-          '</div>' +
-          '<p class="onboarding-tip">Tip: Press <strong>Ctrl+H</strong> to reset HUD stats</p>'
-        );
+        return '<div class="onboarding-done-big">Done</div>';
       },
     },
   ];
@@ -2370,7 +2364,7 @@
     var backBtn = $("onboarding-back");
     var nextBtn = $("onboarding-next");
     var finishBtn = $("onboarding-finish");
-    var stepsContainer = $("onboarding-steps");
+    var progressFill = $("onboarding-progress-fill");
 
     if (!content) return;
 
@@ -2408,13 +2402,8 @@
       }
     }, 100);
 
-    if (stepsContainer) {
-      stepsContainer.querySelectorAll(".onboarding-step").forEach(function (el) {
-        var s = parseInt(el.getAttribute("data-step"), 10);
-        el.classList.remove("active", "done");
-        if (s === step) el.classList.add("active");
-        else if (s < step) el.classList.add("done");
-      });
+    if (progressFill) {
+      progressFill.style.width = ((step / 4) * 100) + "%";
     }
 
     if (backBtn) backBtn.hidden = step === 0;

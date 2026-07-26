@@ -93,6 +93,7 @@ class VeloApp:
         self._hotkey_spec: Optional[str] = None
         self._autostart_enabled: Optional[bool] = None
         self._pending_installer: Optional[Path] = None
+        self._pending_show_requested = False
 
         self.tray = TrayApp(
             on_open_settings=self._request_show_settings,
@@ -205,41 +206,44 @@ class VeloApp:
                 self._open_settings_blocking()
 
     def _request_show_settings(self) -> None:
+        logger.info("_request_show_settings called")
         if self._stopping:
             return
         win = self._window
-        if win is not None:
+        if win is None:
+            logger.warning("_window is None, deferring show request")
+            self._pending_show_requested = True
             try:
-                if hasattr(win, "restore"):
-                    win.restore()
-                if hasattr(win, "show"):
-                    win.show()
-                # Bring window to foreground on Windows
-                try:
-                    import win32gui
-                    import win32con
-                    import win32process
-                    import win32api
-                    hwnd = win32gui.FindWindow(None, "Velo")
-                    if hwnd:
-                        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-                        foreground = win32gui.GetForegroundWindow()
-                        if foreground:
-                            fg_tid = win32process.GetWindowThreadProcessId(foreground)[0]
-                            my_tid = win32api.GetCurrentThreadId()
-                            win32process.AttachThreadInput(my_tid, fg_tid, True)
-                        win32gui.SetForegroundWindow(hwnd)
-                        if foreground:
-                            win32process.AttachThreadInput(my_tid, fg_tid, False)
-                except ImportError:
-                    pass
-                return
-            except (OSError, RuntimeError, AttributeError):
-                pass
+                self._cmd.put_nowait("settings")
+            except queue.Full:
+                self._cmd.put("settings")
+            return
+
         try:
-            self._cmd.put_nowait("settings")
-        except queue.Full:
-            self._cmd.put("settings")
+            if hasattr(win, "restore"):
+                logger.info("calling win.restore()")
+                win.restore()
+                logger.info("win.restore() done")
+            if hasattr(win, "show"):
+                logger.info("calling win.show()")
+                win.show()
+                logger.info("win.show() done")
+            # Briefly pin window on top to force it to the foreground
+            try:
+                logger.info("setting on_top = True")
+                win.on_top = True
+                logger.info("on_top = True done")
+                logger.info("setting on_top = False")
+                win.on_top = False
+                logger.info("on_top = False done")
+            except (OSError, RuntimeError, AttributeError) as exc:
+                logger.warning("on_top toggle failed: %s", exc)
+            logger.info("_request_show_settings - applying force foreground")
+            self._force_foreground()
+            logger.info("_request_show_settings returning")
+            return
+        except (OSError, RuntimeError, AttributeError) as exc:
+            logger.warning("window restore/show failed: %s", exc)
 
     def _open_settings_blocking(self) -> None:
         try:
@@ -284,7 +288,48 @@ class VeloApp:
             if hasattr(self._window, "events") and hasattr(self._window.events, "closed"):
                 self._window.events.closed += _on_closed
 
+            # Focus window when shown (fires after create_window, during webview.start)
+            def _on_shown() -> None:
+                logger.info("window shown event fired")
+                win = self._window
+                if win is None:
+                    return
+                try:
+                    if hasattr(win, "restore"):
+                        win.restore()
+                    if hasattr(win, "show"):
+                        win.show()
+                    try:
+                        win.on_top = True
+                        win.on_top = False
+                    except (OSError, RuntimeError, AttributeError):
+                        pass
+                except (OSError, RuntimeError, AttributeError):
+                    pass
+                # Process any deferred show request that arrived before window was ready
+                if self._pending_show_requested:
+                    self._pending_show_requested = False
+                    logger.info("processing deferred show request via shown event")
+                    try:
+                        if hasattr(win, "restore"):
+                            win.restore()
+                        if hasattr(win, "show"):
+                            win.show()
+                        try:
+                            win.on_top = True
+                            win.on_top = False
+                        except (OSError, RuntimeError, AttributeError):
+                            pass
+                    except (OSError, RuntimeError, AttributeError):
+                        pass
+
+                self._force_foreground()
+
+            if hasattr(self._window, "events") and hasattr(self._window.events, "shown"):
+                self._window.events.shown += _on_shown
+
             try:
+                logger.info("starting webview event loop")
                 webview.start(debug=False)
             except (OSError, RuntimeError) as exc:
                 _win_message(
@@ -335,6 +380,48 @@ class VeloApp:
     def _preview_off(self) -> None:
         self.config.update({"ui_preview_mode": "off"}, persist=True)
         self.tray.notify("Velo", "Settings preview set to Off")
+
+    @staticmethod
+    def _force_foreground() -> None:
+        import ctypes
+        from ctypes import wintypes
+
+        try:
+            user32 = ctypes.windll.user32
+
+            hwnd = user32.FindWindowW(None, "Velo")
+            if not hwnd:
+                return
+
+            foreground = user32.GetForegroundWindow()
+            if foreground == hwnd:
+                return
+
+            GetWindowThreadProcessId = user32.GetWindowThreadProcessId
+            GetWindowThreadProcessId.argtypes = [wintypes.HWND, wintypes.LPVOID]
+            GetWindowThreadProcessId.restype = wintypes.DWORD
+
+            foreground_tid = 0
+            if foreground:
+                foreground_tid = GetWindowThreadProcessId(foreground, None)
+            target_tid = GetWindowThreadProcessId(hwnd, None)
+
+            attached = False
+            if foreground_tid and foreground_tid != target_tid:
+                user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
+                user32.AttachThreadInput.restype = wintypes.BOOL
+                user32.AttachThreadInput(foreground_tid, target_tid, True)
+                attached = True
+
+            try:
+                user32.ShowWindow(hwnd, 9)
+                user32.SetForegroundWindow(hwnd)
+                user32.BringWindowToTop(hwnd)
+            finally:
+                if attached:
+                    user32.AttachThreadInput(foreground_tid, target_tid, False)
+        except Exception:
+            pass
 
     @staticmethod
     def _clipboard(text: str) -> bool:

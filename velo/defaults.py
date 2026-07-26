@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Tuple
 
 APP_NAME = "Velo"
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.1.1"
 PRESET_CLIP_PREFIX = "VELO1."
 PRESET_CLIP_PREFIX_V2 = "VELO2."
 

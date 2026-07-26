@@ -2242,10 +2242,6 @@ updateTrailColorUi();
       });
     });
   }
-  // Track iframe clicks to prevent blur-from-iframe hiding the preview
-  let clickingIframe = false;
-  frame.addEventListener("mousedown", () => { clickingIframe = true; });
-
   // Handle actual tab/window hiding (browser tab switch)
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
@@ -2262,13 +2258,8 @@ updateTrailColorUi();
     }
   });
 
-  // Handle pywebview window losing focus to another app
   window.addEventListener("blur", () => {
     if (previewAuto && !frame.hidden) {
-      if (clickingIframe) {
-        clickingIframe = false;
-        return;
-      }
       frame.hidden = true;
       if (previewViewport) previewViewport.classList.add("is-off");
       if (previewOff) {
@@ -2278,7 +2269,6 @@ updateTrailColorUi();
     }
   });
 
-  // Handle focus returning to the window
   window.addEventListener("focus", () => {
     if (previewAuto && frame.hidden) loadPreview();
   });

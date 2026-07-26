@@ -173,12 +173,19 @@ class EventPipeline:
                 self._stats["cps"] = float(len(self._click_times))
 
         if ev.button_event or ev.wheel:
+            with self._lock:
+                self._acc_dx += dx
+                self._acc_dy += dy
+                self._acc_t = now
+                self._acc_src = ev.source
+                self._acc_buttons = ev.buttons
+                self._has_pending_move = True
             self._flush_pending_move(force=True)
             payload: Dict[str, Any] = {
                 "type": "mouse",
                 "t": now,
-                "dx": round(dx, 3),
-                "dy": round(dy, 3),
+                "dx": 0.0,
+                "dy": 0.0,
                 "btn": ev.button_event,
                 "wheel": ev.wheel,
                 "buttons": ev.buttons,

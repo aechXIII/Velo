@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.1.1] - 2026-07-26
+
+### Fixed
+- Preview hiding on click (again 💀)
+- Trail color spike on mouse button press during movement
+
 ## [2.1.0] - 2026-07-26
 
 ### Added

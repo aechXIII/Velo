@@ -81,3 +81,19 @@ def open_json_dialog(title: str = "Import Velo settings") -> Optional[str]:
         )
 
     return _run_tk_dialog(_ask)
+
+
+def open_image_dialog(title: str = "Choose image") -> Optional[str]:
+    initial = _documents_dir()
+
+    def _ask(filedialog):
+        return filedialog.askopenfilename(
+            title=title,
+            filetypes=[
+                ("Image files", "*.png;*.jpg;*.jpeg;*.gif;*.webp"),
+                ("All files", "*.*"),
+            ],
+            initialdir=initial,
+        )
+
+    return _run_tk_dialog(_ask)

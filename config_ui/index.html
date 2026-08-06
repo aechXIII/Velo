@@ -137,6 +137,7 @@
 
           <section class="block sec" data-section="background" hidden>
             <h2>Background</h2>
+
             <div class="checks">
               <div class="toggle-row">
                 <span class="label">Fill</span>
@@ -173,6 +174,24 @@
                   <span class="track"></span>
                 </label>
               </div>
+              <div class="toggle-row">
+                <span class="label">Image</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="pad_bg_image_enabled" />
+                  <span class="track"></span>
+                </label>
+              </div>
+            </div>
+
+            <hr>
+            <h3 class="sub-sec">Fill</h3>
+            <div class="field">
+              <label>Fill color</label>
+              <input type="color" data-key="pad_bg_color" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h"><span>Fill opacity</span><input type="number" class="val-input" data-link="pad_bg_opacity" step="0.01" /></div>
+              <input type="range" data-key="pad_bg_opacity" min="0" max="1" step="0.01" />
             </div>
             <div class="field">
               <label>Shape</label>
@@ -187,17 +206,72 @@
               <div class="slider-h"><span>Corner radius</span><input type="number" class="val-input" data-link="pad_radius" step="1" /></div>
               <input type="range" data-key="pad_radius" min="0" max="80" step="1" />
             </div>
+
+            <hr>
+            <h3 class="sub-sec">Image</h3>
+            <div class="field">
+              <button type="button" class="btn btn-block btn-ghost" id="btn-bg-image">Choose image...</button>
+              <button type="button" class="btn btn-sm btn-ghost" id="btn-bg-image-clear" hidden>Clear</button>
+            </div>
+            <div id="bg-image-opts" hidden>
+              <div class="slider" data-slider>
+                <div class="slider-h"><span>Opacity</span><input type="number" class="val-input" data-link="pad_bg_image_opacity" step="0.01" /></div>
+                <input type="range" data-key="pad_bg_image_opacity" min="0" max="1" step="0.01" />
+              </div>
+              <div class="field">
+                <label>Sizing</label>
+                <select data-key="pad_bg_image_size">
+                  <option value="cover">Cover</option>
+                  <option value="contain">Contain</option>
+                  <option value="100% 100%">Fill (stretch)</option>
+                </select>
+              </div>
+            </div>
+
+            <hr>
+            <h3 class="sub-sec">Border</h3>
+            <div class="field">
+              <label>Border color</label>
+              <input type="color" data-key="pad_border_color" />
+            </div>
             <div class="slider" data-slider>
-              <div class="slider-h"><span>Fill opacity</span><input type="number" class="val-input" data-link="pad_bg_opacity" step="0.01" /></div>
-              <input type="range" data-key="pad_bg_opacity" min="0" max="1" step="0.01" />
+              <div class="slider-h"><span>Border opacity</span><input type="number" class="val-input" data-link="pad_border_opacity" step="0.01" /></div>
+              <input type="range" data-key="pad_border_opacity" min="0" max="1" step="0.01" />
             </div>
             <div class="slider" data-slider>
               <div class="slider-h"><span>Border thickness</span><input type="number" class="val-input" data-link="pad_border_width" step="0.5" /></div>
               <input type="range" data-key="pad_border_width" min="0.5" max="16" step="0.5" />
             </div>
+
+            <hr>
+            <h3 class="sub-sec">Glow</h3>
+            <div class="checks">
+              <div class="toggle-row">
+                <span class="label">Glow</span>
+                <label class="toggle">
+                  <input type="checkbox" data-key="pad_glow_enabled" />
+                  <span class="track"></span>
+                </label>
+              </div>
+            </div>
+            <div class="field">
+              <label>Glow color</label>
+              <input type="color" data-key="pad_glow_color" />
+            </div>
             <div class="slider" data-slider>
-              <div class="slider-h"><span>Border opacity</span><input type="number" class="val-input" data-link="pad_border_opacity" step="0.01" /></div>
-              <input type="range" data-key="pad_border_opacity" min="0" max="1" step="0.01" />
+              <div class="slider-h"><span>Glow opacity</span><input type="number" class="val-input" data-link="pad_glow_opacity" step="0.01" /></div>
+              <input type="range" data-key="pad_glow_opacity" min="0" max="1" step="0.01" />
+            </div>
+            <div class="slider" data-slider>
+              <div class="slider-h"><span>Glow blur</span><input type="number" class="val-input" data-link="pad_glow_blur" step="1" /></div>
+              <input type="range" data-key="pad_glow_blur" min="0" max="40" step="1" />
+            </div>
+
+            <hr>
+            <h3 class="sub-sec">Grid</h3>
+            <div class="field">
+              <label>Grid color</label>
+              <input type="color" data-key="pad_grid_color" />
             </div>
             <div class="slider" data-slider>
               <div class="slider-h"><span>Grid size</span><input type="number" class="val-input" data-link="pad_grid_size" step="1" /></div>
@@ -211,20 +285,7 @@
               <div class="slider-h"><span>Grid opacity</span><input type="number" class="val-input" data-link="pad_grid_opacity" step="0.01" /></div>
               <input type="range" data-key="pad_grid_opacity" min="0" max="0.5" step="0.01" />
             </div>
-            <div class="row2">
-              <div class="field">
-                <label>Fill color</label>
-                <input type="color" data-key="pad_bg_color" />
-              </div>
-              <div class="field">
-                <label>Border color</label>
-                <input type="color" data-key="pad_border_color" />
-              </div>
-            </div>
-            <div class="field">
-              <label>Grid color</label>
-              <input type="color" data-key="pad_grid_color" />
-            </div>
+
           </section>
 
           <section class="block sec" data-section="motion" hidden>
@@ -785,6 +846,10 @@
               </div>
               <p class="note" id="hotkey-hint">Global - works with game focused</p>
             </div>
+
+            <h3 class="subhead">Preset Hotkeys</h3>
+            <div id="preset-hotkeys"></div>
+            <button type="button" class="btn btn-sm btn-block btn-ghost" id="btn-add-hotkey">+ Add hotkey</button>
 
             <h3 class="subhead">Updates</h3>
             <div class="field">

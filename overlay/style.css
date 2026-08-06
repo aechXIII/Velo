@@ -43,6 +43,7 @@ body {
 .pad-bg {
   position: absolute;
   inset: 0;
+  z-index: 1;
   background: rgba(12, 14, 20, 0.62);
   border: none;
   box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.1);
@@ -75,9 +76,11 @@ body {
   border-radius: 50%;
 }
 
+.pad.shape-stadium,
 .pad.shape-stadium .pad-bg,
 .pad.shape-stadium .pad-grid,
-.pad.shape-stadium .pad-vignette {
+.pad.shape-stadium .pad-vignette,
+.pad.shape-stadium #trail {
   border-radius: 40% / 50%;
 }
 

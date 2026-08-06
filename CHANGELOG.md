@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.2.0] - 2026-08-06
+
+### Added
+- Pad background image
+- Preset hotkeys
+- Border glow effect
+- Toast notification variants
+- Slider double-click to reset an individual setting
+
+### Changed
+- Trail rendering rewritten with per-chunk gradients
+- Slider preview now pushes updates to the preview instantly
+- Preset toolbar shows "Unsaved changes" instead of "No preset selected" when settings are modified
+- Background settings restructured
+
 ## [2.1.1] - 2026-07-26
 
 ### Fixed

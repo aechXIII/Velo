@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Tuple
 
 APP_NAME = "Velo"
-APP_VERSION = "2.1.1"
+APP_VERSION = "2.3.0"
 PRESET_CLIP_PREFIX = "VELO1."
 PRESET_CLIP_PREFIX_V2 = "VELO2."
 
@@ -34,6 +34,13 @@ PRESET_EXCLUDE = frozenset(
         "hidden_presets",
         "backup_enabled",
         "backup_max_count",
+        "pad_bg_image",
+        "preset_hotkey_1",
+        "preset_hotkey_1_target",
+        "preset_hotkey_2",
+        "preset_hotkey_2_target",
+        "preset_hotkey_3",
+        "preset_hotkey_3_target",
     }
 )
 
@@ -57,6 +64,12 @@ SHELL_KEYS = frozenset(
         "accent_color",
         "bg_color",
         "hidden_presets",
+        "preset_hotkey_1",
+        "preset_hotkey_1_target",
+        "preset_hotkey_2",
+        "preset_hotkey_2_target",
+        "preset_hotkey_3",
+        "preset_hotkey_3_target",
     }
 )
 
@@ -343,6 +356,10 @@ DEFAULTS: Dict[str, Any] = {
     "pad_vignette": False,
     "pad_vignette_opacity": 0.3,
     "pad_clip_trail": True,
+    "pad_glow_enabled": False,
+    "pad_glow_color": "#ffffff",
+    "pad_glow_opacity": 0.5,
+    "pad_glow_blur": 24,
     "canvas_aspect": "16:9",
     "canvas_width": 640,
     "canvas_height": 360,
@@ -382,6 +399,11 @@ DEFAULTS: Dict[str, Any] = {
     "hidden_presets": [],
     "backup_enabled": True,
     "backup_max_count": 10,
+    "pad_bg_image": "",
+    "pad_bg_image_enabled": False,
+    "pad_bg_image_opacity": 1.0,
+    "pad_bg_image_size": "cover",
+    "preset_hotkeys": [],
 }
 
 # Config key -> alias mapping for VELO2 share codes
@@ -439,6 +461,12 @@ SHARE_ALIASES: Dict[str, Any] = {
     "pad_vignette": "pv",
     "pad_vignette_opacity": "pvo",
     "pad_clip_trail": "pct",
+
+    # Pad glow
+    "pad_glow_enabled": "pge",
+    "pad_glow_color": "pgc2",
+    "pad_glow_opacity": "pgo2",
+    "pad_glow_blur": "pgb",
 
     # Cursor & clicks
     "show_cursor_dot": "cs",

@@ -23,7 +23,7 @@ SCHEMA: dict[str, tuple[type, Any | None, Any | None, str]] = {
     "pad_fill_opacity": (float, 0.0, 1.0, "Pad fill opacity"),
     "pad_border": (bool, None, None, "Show pad border"),
     "pad_border_color": (str, None, None, "Pad border color"),
-    "pad_border_width": (int, 0, 50, "Pad border width"),
+    "pad_border_width": (float, 0, 50, "Pad border width"),
     "pad_grid": (bool, None, None, "Show grid on pad"),
     "pad_grid_size": (int, 1, 200, "Grid cell size"),
     "pad_grid_opacity": (float, 0.0, 1.0, "Grid opacity"),
@@ -115,6 +115,11 @@ SCHEMA: dict[str, tuple[type, Any | None, Any | None, str]] = {
     "last_preset": (str, None, None, "Last used preset name"),
     "language": (str, None, None, "UI language code"),
     "theme": (str, None, None, "UI theme"),
+
+    "pad_glow_enabled": (bool, None, None, "Enable pad glow effect"),
+    "pad_glow_color": (str, None, None, "Pad glow color as hex string"),
+    "pad_glow_opacity": (float, 0.0, 1.0, "Pad glow opacity"),
+    "pad_glow_blur": (float, 0, 40, "Pad glow blur radius in pixels"),
 
     "backup_enabled": (bool, None, None, "Enable automatic config backups"),
     "backup_max_count": (int, 1, 50, "Maximum number of backup files to keep"),

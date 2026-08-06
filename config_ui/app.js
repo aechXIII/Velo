@@ -27,7 +27,7 @@
   const SECTION_KEYS = {
     presets: [],
     size: ["canvas_aspect", "canvas_width", "canvas_height"],
-    background: ["pad_shape", "pad_radius", "pad_bg_enabled", "pad_bg_color", "pad_bg_opacity", "pad_blur", "pad_border_enabled", "pad_border_color", "pad_border_opacity", "pad_border_width", "pad_shadow", "pad_shadow_opacity", "pad_grid", "pad_grid_size", "pad_grid_thickness", "pad_grid_color", "pad_grid_opacity", "pad_vignette", "pad_vignette_opacity", "pad_clip_trail", "source_bg_enabled", "source_bg_color", "source_bg_opacity", "overlay_opacity"],
+    background: ["pad_shape", "pad_radius", "pad_bg_enabled", "pad_bg_color", "pad_bg_opacity", "pad_blur", "pad_shadow", "pad_shadow_opacity", "pad_vignette", "pad_vignette_opacity", "pad_clip_trail", "source_bg_enabled", "source_bg_color", "source_bg_opacity", "overlay_opacity", "pad_grid", "pad_grid_size", "pad_grid_thickness", "pad_grid_color", "pad_grid_opacity", "pad_border_enabled", "pad_border_color", "pad_border_opacity", "pad_border_width", "pad_glow_enabled", "pad_glow_color", "pad_glow_opacity", "pad_glow_blur"],
     motion: ["capture_mode", "invert_y", "sensitivity", "view_mode", "camera_lag", "camera_look_ahead", "camera_follow", "view_zoom", "motion_scale", "motion_ease", "motion_feel"],
     trail: ["trail_enabled", "trail_lifetime_ms", "trail_max_points", "trail_width", "trail_glow", "trail_glow_blur", "trail_glow_opacity", "trail_glow_width", "trail_glow_custom_color", "trail_glow_custom_color_val", "trail_min_distance", "trail_smoothing", "trail_curve", "trail_samples", "fade_style", "trail_color", "speed_colorize", "speed_stops", "speed_max", "speed_min"],
     cursor: ["show_cursor_dot", "cursor_dot_size", "cursor_dot_color", "cursor_dot_opacity", "show_clicks", "click_lifetime_ms", "click_radius", "click_line_width", "click_opacity", "click_expand", "click_style", "click_show", "click_colors"],
@@ -113,6 +113,10 @@
     pad_vignette: false,
     pad_vignette_opacity: 0.3,
     pad_clip_trail: true,
+    pad_glow_enabled: false,
+    pad_glow_color: "#ffffff",
+    pad_glow_opacity: 0.5,
+    pad_glow_blur: 24,
     canvas_aspect: "16:9",
     canvas_width: 640,
     canvas_height: 360,
@@ -402,7 +406,7 @@
         ...authHeaders,
       },
     }).catch((e) => {
-      toast("Connection lost");
+      toast("Connection lost", "error");
       throw e;
     });
   }
@@ -517,17 +521,17 @@
       }
       bindForm();
       capturePresetBaseline();
-      toast("Renamed to " + newName);
+      toast("Renamed to " + newName, "success");
       await refreshPresets();
     } catch (e) {
-      toast(String(e.message || e) || "Rename failed");
+      toast(String(e.message || e) || "Rename failed", "error");
       updateDirtyUi();
     }
   }
 
   async function renameSelectedPreset() {
     if (!selectedPreset.name || selectedPreset.kind !== "user") {
-      toast("Pick a saved preset first");
+      toast("Pick a saved preset first", "warning");
       return;
     }
     const newName = await promptDialog("New name for this preset:", {
@@ -536,14 +540,14 @@
       confirmText: "Rename",
     });
     if (newName == null) return;
-    if (!newName) { toast("Enter a name"); return; }
+    if (!newName) { toast("Enter a name", "warning"); return; }
     if (newName === selectedPreset.name) return;
     await doRenamePreset(selectedPreset.name, newName);
   }
 
   async function duplicateSelectedPreset() {
     if (!selectedPreset.name) {
-      toast("Select a preset first");
+      toast("Select a preset first", "warning");
       return;
     }
     let name = selectedPreset.kind === "builtin"
@@ -575,10 +579,10 @@
       selectedPreset = { name, kind: "user" };
       bindForm();
       capturePresetBaseline();
-      toast("Duplicated as " + name);
+      toast("Duplicated as " + name, "success");
       await refreshPresets();
     } catch (e) {
-      toast(String(e.message || e) || "Duplicate failed");
+      toast(String(e.message || e) || "Duplicate failed", "error");
     }
   }
 
@@ -607,7 +611,7 @@
     if (dirtyRow) dirtyRow.hidden = !presetDirty;
     const selName = $("preset-selected-name");
     if (selName) {
-      const label = hasSelection ? name : "No preset selected";
+      const label = hasSelection ? name : "Unsaved changes";
       const dirtyMark = hasSelection && presetDirty ? " *" : "";
       selName.textContent = label + dirtyMark;
       selName.title = name || "";
@@ -719,6 +723,7 @@
   }
 
   function showSection(id, persist) {
+    if (id === "grid" || id === "border") id = "background";
     currentSection = id || "presets";
     document.querySelectorAll(".sec-btn").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.section === currentSection);
@@ -1105,8 +1110,9 @@ updateTrailColorUi();
     const btnCheck = $("btn-update-check");
     if (btnCheck) {
       btnCheck.disabled = true;
-      btnCheck.textContent = "Checking...";
+      btnCheck.textContent = "Checking\u2026";
     }
+    toast("Checking for updates\u2026");
     try {
       const res = await api("/api/update/check", { method: "POST" });
       const data = await readJson(res);
@@ -1115,12 +1121,12 @@ updateTrailColorUi();
       if (data.available && data.latest_version) {
         openUpdateModal(data);
       } else if (!data.last_error) {
-        toast("Up to date");
+        toast("Up to date", "success");
       } else {
-        toast(data.last_error);
+        toast(data.last_error, "error");
       }
     } catch (e) {
-      toast(String(e.message || e) || "Check failed");
+      toast(String(e.message || e) || "Check failed", "error");
       await refreshUpdateStatus();
     }
   }
@@ -1138,7 +1144,7 @@ updateTrailColorUi();
       renderUpdatePanel(data);
       toast("Later");
     } catch (e) {
-      toast(String(e.message || e) || "Failed");
+      toast(String(e.message || e) || "Failed", "error");
     }
   }
 
@@ -1160,7 +1166,7 @@ updateTrailColorUi();
       renderUpdatePanel(data);
       toast(ver ? "Skipped v" + ver : "Skipped");
     } catch (e) {
-      toast(String(e.message || e) || "Failed");
+      toast(String(e.message || e) || "Failed", "error");
     }
   }
 
@@ -1177,13 +1183,13 @@ updateTrailColorUi();
         if (updateState && updateState.installing) {
           setTimeout(tick, 500);
         } else if (updateState && updateState.last_error) {
-          toast(updateState.last_error);
+          toast(updateState.last_error, "error");
           if (updateModalOpen) syncUpdateModal(updateState);
         }
       };
       setTimeout(tick, 400);
     } catch (e) {
-      toast(String(e.message || e) || "Install failed");
+      toast(String(e.message || e) || "Install failed", "error");
       await refreshUpdateStatus();
     }
   }
@@ -1352,6 +1358,10 @@ updateTrailColorUi();
       undoSnapshot = structuredClone(cfg);
     }
     Object.assign(cfg, patch);
+    // push to preview iframe immediately for live slider feedback
+    if (frame && frame.contentWindow) {
+      try { frame.contentWindow.postMessage({ type: "velo-patch", data: patch }, "*"); } catch (_) {}
+    }
     updateSectionDots();
     if ("canvas_width" in patch || "canvas_height" in patch || "canvas_aspect" in patch) {
       maybeLockAspect(patch);
@@ -1399,6 +1409,9 @@ updateTrailColorUi();
     if ("accent_color" in patch || "bg_color" in patch) {
       applyAccentColors(cfg);
     }
+    if ("pad_bg_image" in patch || "pad_bg_image_enabled" in patch) {
+      updateBgImageUi();
+    }
     const dirtyKeys = Object.keys(patch).filter((k) => !presetExclude.has(k));
     if (dirtyKeys.length) recomputePresetDirty();
 
@@ -1438,12 +1451,19 @@ updateTrailColorUi();
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       });
-      if (!res.ok) throw new Error("save");
+      if (!res.ok) {
+        let msg = "Save failed";
+        try {
+          const errData = await res.json();
+          if (errData.error) msg += ": " + errData.error;
+        } catch (_) {}
+        throw new Error(msg);
+      }
       const data = await res.json();
       if (data.data) {
         cfg = data.data;
         updateSectionDots();
-        if ("render_quality" in patch || "motion_feel" in patch) bindForm();
+        if ("render_quality" in patch || "motion_feel" in patch || "preset_hotkeys" in patch || "pad_bg_image" in patch || "pad_bg_image_enabled" in patch) bindForm();
         else {
           updateFeelUi();
           recomputePresetDirty();
@@ -1452,8 +1472,8 @@ updateTrailColorUi();
       }
       updateSizeLabels();
       updateObsSetupUi();
-    } catch (_) {
-      statusEl.textContent = "Save failed";
+    } catch (e) {
+      statusEl.textContent = e.message || "Save failed";
     }
   }
 
@@ -1564,14 +1584,14 @@ updateTrailColorUi();
       var data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "delete");
       if (data.data) cfg = data.data;
-      toast("Deleted " + name);
+      toast("Deleted " + name, "success");
       if (selectedPreset.name === name && selectedPreset.kind === "user") {
         selectedPreset = { name: cfg.active_preset || "", kind: cfg.active_preset_kind || "builtin" };
       }
       await refreshPresets();
       bindForm();
     } catch (e) {
-      toast(String(e.message || e) || "Delete failed");
+      toast(String(e.message || e) || "Delete failed", "error");
     }
   }
 
@@ -1628,7 +1648,7 @@ updateTrailColorUi();
       if (!(opts && opts.silent)) toast(name);
       await refreshPresets();
     } catch (e) {
-      toast("Couldn't load preset");
+      toast("Couldn't load preset", "error");
     }
   }
 
@@ -1645,7 +1665,7 @@ updateTrailColorUi();
       confirmText: "Save",
     });
     if (name == null) return;
-    if (!name) { toast("Enter a name"); return; }
+    if (!name) { toast("Enter a name", "warning"); return; }
     try {
       const res = await api("/api/presets/save", {
         method: "POST",
@@ -1667,16 +1687,16 @@ updateTrailColorUi();
       bindForm();
       capturePresetBaseline();
       updateSectionDots();
-      toast("Saved " + name);
+      toast("Saved " + name, "success");
       await refreshPresets();
     } catch (e) {
-      toast(String(e.message || e) || "Save failed");
+      toast(String(e.message || e) || "Save failed", "error");
     }
   }
 
   async function updateSelectedPreset() {
     if (!selectedPreset.name || selectedPreset.kind !== "user") {
-      toast("Pick a saved preset first");
+      toast("Pick a saved preset first", "warning");
       return;
     }
     try {
@@ -1691,16 +1711,16 @@ updateTrailColorUi();
       capturePresetBaseline();
       updateSectionDots();
       updateDirtyUi();
-      toast("Updated " + selectedPreset.name);
+      toast("Updated " + selectedPreset.name, "success");
       await refreshPresets();
     } catch (e) {
-      toast(String(e.message || e) || "Update failed");
+      toast(String(e.message || e) || "Update failed", "error");
     }
   }
 
   async function exportSelectedPresetFile() {
     if (!selectedPreset.name) {
-      toast("Select a preset first");
+      toast("Select a preset first", "warning");
       return;
     }
     try {
@@ -1712,9 +1732,9 @@ updateTrailColorUi();
       const data = await readJson(res);
       if (data.cancelled) return;
       if (!res.ok || !data.ok) throw new Error(data.error || "export");
-      toast("Preset exported");
+      toast("Preset exported", "success");
     } catch (e) {
-      toast(String(e.message || e) || "Export failed");
+      toast(String(e.message || e) || "Export failed", "error");
     }
   }
 
@@ -1729,7 +1749,7 @@ updateTrailColorUi();
 
   async function copySelectedPreset() {
     if (!selectedPreset.name) {
-      toast("Select a preset first");
+      toast("Select a preset first", "warning");
       return;
     }
     try {
@@ -1751,9 +1771,9 @@ updateTrailColorUi();
           hideCancel: true,
         });
       }
-      toast(ok ? "Preset code copied" : "Code ready to copy");
+      toast(ok ? "Preset code copied" : "Code ready to copy", "success");
     } catch (e) {
-      toast(String(e.message || e) || "Copy failed");
+      toast(String(e.message || e) || "Copy failed", "error");
     }
   }
 
@@ -1779,9 +1799,9 @@ updateTrailColorUi();
       bindForm();
       capturePresetBaseline();
       await refreshPresets();
-      toast("Preset imported");
+      toast("Preset imported", "success");
     } catch (e) {
-      toast(String(e.message || e) || "Import failed");
+      toast(String(e.message || e) || "Import failed", "error");
     }
   }
 
@@ -1789,7 +1809,7 @@ updateTrailColorUi();
     const input = $("preset-code-input");
     const text = input ? String(input.value || "").trim() : "";
     if (!text) {
-      toast("Paste a share code first");
+      toast("Paste a share code first", "warning");
       if (input) input.focus();
       return;
     }
@@ -1818,9 +1838,9 @@ updateTrailColorUi();
       bindForm();
       capturePresetBaseline();
       await refreshPresets();
-      toast("Preset imported");
+      toast("Preset imported", "success");
     } catch (e) {
-      toast(String(e.message || e) || "Import failed");
+      toast(String(e.message || e) || "Import failed", "error");
     }
   }
 
@@ -1887,9 +1907,9 @@ updateTrailColorUi();
       const data = await readJson(res);
       if (data.cancelled) return;
       if (!res.ok || !data.ok) throw new Error(data.error || "export");
-      toast(data.path ? "Saved" : "Exported");
+      toast(data.path ? "Saved" : "Exported", "success");
     } catch (e) {
-      toast(String(e.message || e) || "Export failed");
+      toast(String(e.message || e) || "Export failed", "error");
     }
   }
 
@@ -1921,9 +1941,9 @@ updateTrailColorUi();
       bindForm();
       capturePresetBaseline();
       await refreshPresets();
-      toast("Imported");
+      toast("Imported", "success");
     } catch (e) {
-      toast(String(e.message || e) || "Import failed");
+      toast(String(e.message || e) || "Import failed", "error");
     }
   }
 
@@ -1936,7 +1956,7 @@ updateTrailColorUi();
     } catch (_) {
       await copyText(text);
     }
-    toast("Size " + text);
+    toast("Size " + text, "success");
   }
 
   async function copyText(text) {
@@ -1960,13 +1980,13 @@ updateTrailColorUi();
 
   async function copyUrl() {
     if (await copyText(overlayUrl())) {
-      toast("URL copied");
+      toast("URL copied", "success");
       if (!cfg.ui_obs_setup_done) {
         queuePatch({ ui_obs_setup_done: true });
         updateObsSetupUi();
       }
     } else {
-      toast("Copy failed");
+      toast("Copy failed", "error");
     }
   }
 
@@ -2104,9 +2124,9 @@ updateTrailColorUi();
         const res = await api("/api/stats/reset", { method: "POST" });
         const data = await res.json();
         if (!res.ok || !data.ok) throw new Error(data.error || "reset");
-        toast("Stats reset");
+        toast("Stats reset", "success");
       } catch (_) {
-        toast("Could not reset stats");
+        toast("Could not reset stats", "error");
       }
     });
   }
@@ -2204,14 +2224,14 @@ updateTrailColorUi();
       cfg = data.data || cfg;
       bindForm();
       capturePresetBaseline();
-      toast("Look reset");
+      toast("Look reset", "success");
     });
   }
   if ($("btn-setup-done")) {
     $("btn-setup-done").addEventListener("click", () => {
       queuePatch({ ui_obs_setup_done: true });
       updateObsSetupUi();
-      toast("OK");
+      toast("OK", "success");
     });
   }
   if (btnDirtySave) btnDirtySave.addEventListener("click", savePresetAs);
@@ -2220,11 +2240,11 @@ updateTrailColorUi();
       const name = selectedPreset.name || cfg.active_preset || "";
       const kind = selectedPreset.kind || cfg.active_preset_kind || "builtin";
       if (!name) {
-        toast("No preset selected");
+        toast("No preset selected", "warning");
         return;
       }
       await applyPreset(name, kind, { silent: true });
-      toast("Changes discarded");
+      toast("Changes discarded", "success");
     });
   }
   $("btn-reload").addEventListener("click", loadPreview);
@@ -2296,6 +2316,7 @@ updateTrailColorUi();
       }
     });
   }
+
   $("btn-reset").addEventListener("click", async () => {
     const ok = await confirmDialog(
       "Reset all settings to defaults?\nAuth token is kept so your OBS URL still works.",
@@ -2311,7 +2332,7 @@ updateTrailColorUi();
     };
     bindForm();
     capturePresetBaseline();
-    toast("Reset");
+    toast("Reset", "success");
   });
 
   $("btn-restart").addEventListener("click", async () => {
@@ -2320,7 +2341,7 @@ updateTrailColorUi();
       port: cfg.port,
       auth_token: cfg.auth_token,
     });
-    toast("Restarting...");
+    toast("Restarting…");
     try {
       await api("/api/server/restart", { method: "POST" });
     } catch (_) {}
@@ -2330,6 +2351,158 @@ updateTrailColorUi();
         (cfg.auth_token ? `?token=${encodeURIComponent(cfg.auth_token)}` : "");
     }, 700);
   });
+
+  /* Double-click slider/val-input - reset to default */
+  document.addEventListener("dblclick", (e) => {
+    const slider = e.target.closest("[data-key]");
+    const valInput = e.target.closest(".val-input[data-link]");
+    if (!slider && !valInput) return;
+    const key = slider ? slider.getAttribute("data-key") : valInput.getAttribute("data-link");
+    if (!key || !(key in DEFAULT_CFG)) return;
+    queuePatch({ [key]: DEFAULT_CFG[key] });
+    e.preventDefault();
+  });
+
+  /* Background image */
+  const btnBgImage = $("btn-bg-image");
+  const btnBgImageClear = $("btn-bg-image-clear");
+  function updateBgImageUi() {
+    const enabled = !!cfg.pad_bg_image_enabled;
+    const has = enabled && !!cfg.pad_bg_image;
+    if (btnBgImage) btnBgImage.textContent = has ? "Change image..." : "Choose image...";
+    if (btnBgImageClear) btnBgImageClear.hidden = !has;
+    const opts = $("bg-image-opts");
+    if (opts) opts.hidden = !has;
+  }
+  if (btnBgImage) {
+    btnBgImage.addEventListener("click", async () => {
+      try {
+        const res = await api("/api/config/bg-image-dialog", { method: "POST" });
+        const data = await readJson(res);
+        if (data.cancelled) return;
+        if (!res.ok || !data.ok) throw new Error(data.error || "bg image");
+        if (data.data && data.data.pad_bg_image) {
+          queuePatch({ pad_bg_image: data.data.pad_bg_image });
+        }
+      } catch (e) {
+        toast(String(e.message || e) || "Image failed", "error");
+      }
+    });
+  }
+  if (btnBgImageClear) {
+    btnBgImageClear.addEventListener("click", () => {
+      queuePatch({ pad_bg_image: "" });
+    });
+  }
+
+  /* Preset hotkeys - dynamic from cfg.preset_hotkeys */
+  const presetHotkeysEl = $("preset-hotkeys");
+  let presetHotkeyListeningIdx = -1;
+
+  function getPresetNames() {
+    const names = [];
+    (presetInfo.user || []).forEach(p => names.push(p.name));
+    (presetInfo.builtin || []).forEach(p => {
+      if (!(cfg.hidden_presets || []).includes(p.name)) names.push(p.name);
+    });
+    return names;
+  }
+
+  function renderPresetHotkeys() {
+    if (!presetHotkeysEl) return;
+    const hotkeys = cfg.preset_hotkeys || [];
+    const names = getPresetNames();
+    let html = "";
+    hotkeys.forEach((entry, i) => {
+      const key = entry.key || "";
+      const target = entry.target || "";
+      const opts = '<option value="">Empty</option>' +
+        names.map(n => '<option value="' + n.replace(/"/g, "&quot;") + '"' + (n === target ? " selected" : "") + '>' + n + '</option>').join("");
+      html += '<div class="phk" data-idx="' + i + '">' +
+        '<select class="phk-target">' + opts + '</select>' +
+        '<button type="button" class="btn btn-sm phk-bind">' + (key || "Click to bind") + '</button>' +
+        '<button type="button" class="phk-clear" title="Remove">X</button>' +
+        '</div>';
+    });
+    presetHotkeysEl.innerHTML = html;
+    wirePresetHotkeyEvents();
+  }
+
+  function wirePresetHotkeyEvents() {
+    if (!presetHotkeysEl) return;
+    presetHotkeysEl.querySelectorAll(".phk-target").forEach((sel) => {
+      sel.addEventListener("change", () => {
+        const idx = parseInt(sel.closest(".phk").dataset.idx, 10);
+        const hotkeys = (cfg.preset_hotkeys || []).slice();
+        if (idx < hotkeys.length) hotkeys[idx] = { ...hotkeys[idx], target: sel.value };
+        queuePatch({ preset_hotkeys: hotkeys });
+      });
+    });
+    presetHotkeysEl.querySelectorAll(".phk-bind").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const idx = parseInt(btn.closest(".phk").dataset.idx, 10);
+        if (presetHotkeyListeningIdx >= 0) {
+          stopPresetHotkeyListen();
+          return;
+        }
+        presetHotkeyListeningIdx = idx;
+        btn.textContent = "Press keys...";
+        btn.classList.add("listening");
+        function stop() {
+          window.removeEventListener("keydown", handler, true);
+          presetHotkeyListeningIdx = -1;
+          // refresh all
+          renderPresetHotkeys();
+        }
+        const handler = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const k = e.key.toUpperCase();
+          if (k === "CONTROL" || k === "SHIFT" || k === "ALT" || k === "META") return;
+          const mods = [];
+          if (e.ctrlKey) mods.push("Ctrl");
+          if (e.shiftKey) mods.push("Shift");
+          if (e.altKey) mods.push("Alt");
+          if (e.metaKey) mods.push("Win");
+          let keyName = k;
+          if (k === " ") keyName = "Space";
+          const spec = [...mods, keyName].join("+");
+          const hotkeys = (cfg.preset_hotkeys || []).slice();
+          if (idx < hotkeys.length) hotkeys[idx] = { ...hotkeys[idx], key: spec };
+          stop();
+          queuePatch({ preset_hotkeys: hotkeys });
+          toast("Bound " + spec);
+        };
+        window.addEventListener("keydown", handler, true);
+      });
+    });
+    presetHotkeysEl.querySelectorAll(".phk-clear").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const idx = parseInt(btn.closest(".phk").dataset.idx, 10);
+        const hotkeys = (cfg.preset_hotkeys || []).slice();
+        hotkeys.splice(idx, 1);
+        queuePatch({ preset_hotkeys: hotkeys });
+      });
+    });
+  }
+
+  function stopPresetHotkeyListen() {}
+
+  if ($("btn-add-hotkey")) {
+    $("btn-add-hotkey").addEventListener("click", () => {
+      const hotkeys = (cfg.preset_hotkeys || []).slice();
+      hotkeys.push({ key: "", target: "" });
+      queuePatch({ preset_hotkeys: hotkeys });
+    });
+  }
+
+  /* Override bindForm to also update bg image UI and hotkey UI */
+  const origBindForm = bindForm;
+  bindForm = function() {
+    origBindForm();
+    updateBgImageUi();
+    renderPresetHotkeys();
+  };
 
   const searchInput = document.getElementById('settings-search');
   const searchClear = document.getElementById('search-clear');

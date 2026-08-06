@@ -9,7 +9,7 @@ import ctypes
 import threading
 import time
 from ctypes import wintypes
-from typing import Callable, Optional, Tuple
+from typing import Callable, Dict, Optional, Tuple
 
 from velo.constants import HC_ACTION, HOTKEY_DEBOUNCE, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN
 
@@ -220,10 +220,13 @@ class GlobalHotkeys:
         self._ready = threading.Event()
         self._hook = None
         self._proc = None
+        # single key (compat)
         self._mods = 0
         self._vk = 0
         self._label = ""
         self._callback: Optional[Callable[[], None]] = None
+        # multiple bindings: spec -> (mods, vk, label, callback)
+        self._bindings: Dict[str, Tuple[int, int, str, Callable[[], None]]] = {}
         self._last_fire = 0.0
         self._last_error: Optional[str] = None
 
@@ -233,13 +236,11 @@ class GlobalHotkeys:
 
     @property
     def active(self) -> bool:
-        """True when a hotkey is bound and the hook thread is running."""
         with self._lock:
-            bound = bool(self._callback and self._vk)
+            bound = bool(self._callback and self._vk) or bool(self._bindings)
         return bound and bool(self._thread and self._thread.is_alive())
 
     def start(self) -> None:
-        """No-op. Hook installs only when set_hotkey() binds a key."""
         return
 
     def stop(self) -> None:
@@ -251,6 +252,7 @@ class GlobalHotkeys:
             self._vk = 0
             self._mods = 0
             self._label = ""
+            self._bindings.clear()
         self._last_error = None
         self._teardown_hook()
 
@@ -270,6 +272,25 @@ class GlobalHotkeys:
         if self._last_error:
             return None
         return label
+
+    def add_binding(self, spec: str, callback: Callable[[], None]) -> Optional[str]:
+        parsed = parse_hotkey(spec)
+        if not parsed:
+            return None
+        mods, vk, label = parsed
+        with self._lock:
+            self._bindings[spec] = (mods, vk, label, callback)
+        self._last_error = None
+        self._ensure_hook()
+        if self._last_error:
+            return None
+        return label
+
+    def remove_binding(self, spec: str) -> None:
+        with self._lock:
+            self._bindings.pop(spec, None)
+        if not self._bindings and not (self._callback and self._vk):
+            self._teardown_hook()
 
     def _ensure_hook(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -297,6 +318,16 @@ class GlobalHotkeys:
         self._proc = None
 
     def _matches(self, vk_code: int) -> bool:
+        now = time.perf_counter()
+        if now - self._last_fire < HOTKEY_DEBOUNCE:
+            return False
+        # check multiple bindings first
+        with self._lock:
+            bindings = dict(self._bindings)
+        for _spec, (mods, vk, _label, _cb) in bindings.items():
+            if int(vk_code) == vk and self._mods_match(mods):
+                return True
+        # check single binding (compat)
         with self._lock:
             want_mods = self._mods
             want_vk = self._vk
@@ -305,6 +336,9 @@ class GlobalHotkeys:
             return False
         if int(vk_code) != want_vk:
             return False
+        return self._mods_match(want_mods)
+
+    def _mods_match(self, want_mods: int) -> bool:
         ctrl = _down(VK_CONTROL)
         shift = _down(VK_SHIFT)
         alt = _down(VK_MENU)
@@ -324,14 +358,18 @@ class GlobalHotkeys:
         if not self._matches(vk_code):
             return
         now = time.perf_counter()
-        if now - self._last_fire < HOTKEY_DEBOUNCE:
-            return
         self._last_fire = now
+        # fire matching bindings + single callback
         with self._lock:
-            cb = self._callback
-        if not cb:
-            return
-        cb()
+            bindings = dict(self._bindings)
+            single_cb = self._callback
+            single_vk = self._vk
+        for _spec, (mods, vk, _label, cb) in bindings.items():
+            if int(vk_code) == vk and self._mods_match(mods):
+                cb()
+                return
+        if single_cb and single_vk and int(vk_code) == single_vk:
+            single_cb()
 
     def _loop(self) -> None:
         self._thread_id = kernel32.GetCurrentThreadId()

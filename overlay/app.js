@@ -90,6 +90,10 @@
     pad_bg_enabled: true,
     pad_bg_color: "#0a0a0a",
     pad_bg_opacity: 0.72,
+    pad_bg_image: "",
+    pad_bg_image_enabled: false,
+    pad_bg_image_opacity: 1.0,
+    pad_bg_image_size: "cover",
     pad_blur: false,
     pad_border_enabled: true,
     pad_border_color: "#ffffff",
@@ -109,6 +113,10 @@
     pad_vignette: false,
     pad_vignette_opacity: 0.3,
     pad_clip_trail: true,
+    pad_glow_enabled: false,
+    pad_glow_color: "#ffffff",
+    pad_glow_opacity: 0.5,
+    pad_glow_blur: 24,
     source_bg_enabled: false,
     source_bg_color: "#000000",
     source_bg_opacity: 0,
@@ -301,28 +309,6 @@ function fadeAlpha(age, life) {
     const radius = Number(cfg.pad_radius) || 12;
     pad.style.setProperty("--pad-radius", radius + "px");
 
-    if (cfg.pad_bg_enabled) {
-      padBg.style.background = rgba(hexToRgb(cfg.pad_bg_color), Number(cfg.pad_bg_opacity) ?? 0.72);
-    } else {
-      padBg.style.background = "transparent";
-    }
-
-    padBg.style.border = "none";
-    const shadows = [];
-    if (cfg.pad_border_enabled) {
-      const bw = Math.max(0.5, Number(cfg.pad_border_width) || 1.5);
-      const bc = rgba(
-        hexToRgb(cfg.pad_border_color),
-        Number(cfg.pad_border_opacity) ?? 0.12
-      );
-      shadows.push(`inset 0 0 0 ${bw}px ${bc}`);
-    }
-    if (cfg.pad_shadow && cfg.pad_bg_enabled) {
-      const so = Number(cfg.pad_shadow_opacity) ?? 0.4;
-      shadows.push(`0 10px 36px rgba(0,0,0,${so})`);
-    }
-    padBg.style.boxShadow = shadows.length ? shadows.join(", ") : "none";
-
     const br =
       shape === "rect"
         ? "0"
@@ -331,9 +317,68 @@ function fadeAlpha(age, life) {
           : shape === "circle"
             ? "50%"
             : shape === "stadium"
-              ? "40% / 50%"
+              ? ""
               : radius + "px";
+
+    const bw = Math.max(0.5, Number(cfg.pad_border_width) || 1.5);
+
+    const hasImage = cfg.pad_bg_image_enabled && cfg.pad_bg_image;
+    const showBg = cfg.pad_bg_enabled || cfg.pad_glow_enabled || hasImage;
+    if (cfg.pad_bg_enabled) {
+      padBg.style.background = rgba(hexToRgb(cfg.pad_bg_color || "#0a0a0a"), Number(cfg.pad_bg_opacity) ?? 0.72);
+      if (hasImage) {
+        padBg.style.backgroundImage = "url(" + cfg.pad_bg_image + ")";
+        padBg.style.backgroundSize = cfg.pad_bg_image_size || "cover";
+        padBg.style.backgroundPosition = ((cfg.pad_bg_image_pos_x || 50) + "% " + (cfg.pad_bg_image_pos_y || 50) + "%");
+        padBg.style.backgroundRepeat = "no-repeat";
+        padBg.style.opacity = String(cfg.pad_bg_image_opacity ?? 1.0);
+      } else {
+        padBg.style.backgroundImage = "";
+        padBg.style.backgroundSize = "";
+        padBg.style.backgroundPosition = "";
+        padBg.style.backgroundRepeat = "";
+        padBg.style.opacity = "1";
+      }
+    } else if (hasImage) {
+      padBg.style.background = "none";
+      padBg.style.backgroundImage = "url(" + cfg.pad_bg_image + ")";
+      padBg.style.backgroundSize = cfg.pad_bg_image_size || "cover";
+      padBg.style.backgroundPosition = ((cfg.pad_bg_image_pos_x || 50) + "% " + (cfg.pad_bg_image_pos_y || 50) + "%");
+      padBg.style.backgroundRepeat = "no-repeat";
+      padBg.style.opacity = String(cfg.pad_bg_image_opacity ?? 0.8);
+    } else {
+      padBg.style.background = "transparent";
+      padBg.style.backgroundImage = "";
+    }
+    padBg.hidden = !showBg;
+
+    padBg.style.border = "none";
+    padBg.style.top = "0";
+    padBg.style.right = "0";
+    padBg.style.bottom = "0";
+    padBg.style.left = "0";
     padBg.style.borderRadius = br;
+
+    const shadows = [];
+
+    if (cfg.pad_border_enabled) {
+      const bc = rgba(hexToRgb(cfg.pad_border_color || "#ffffff"), Number(cfg.pad_border_opacity) ?? 0.12);
+      shadows.push(`inset 0 0 0 ${bw}px ${bc}`);
+    }
+
+    if (cfg.pad_glow_enabled) {
+      const glowBlur = Number(cfg.pad_glow_blur) || 24;
+      const glowColor = cfg.pad_glow_color || "#ffffff";
+      const glowOpacity = Number(cfg.pad_glow_opacity) ?? 0.5;
+      shadows.push(`inset 0 0 ${glowBlur}px ${rgba(hexToRgb(glowColor), glowOpacity)}`);
+    }
+
+    if (cfg.pad_shadow && cfg.pad_bg_enabled) {
+      const so = Number(cfg.pad_shadow_opacity) ?? 0.4;
+      shadows.push(`0 10px 36px rgba(0,0,0,${so})`);
+    }
+    padBg.style.boxShadow = shadows.length ? shadows.join(", ") : "none";
+
     pad.style.borderRadius = br;
     canvas.style.borderRadius = br;
 
@@ -884,115 +929,86 @@ function fadeAlpha(age, life) {
     return path;
   }
 
-  function strokePolyline(path, startI, endI) {
-    if (endI <= startI) return;
-    ctx.beginPath();
-    ctx.moveTo(path[startI].x, path[startI].y);
-    for (let i = startI + 1; i <= endI; i++) {
-      ctx.lineTo(path[i].x, path[i].y);
-    }
-    ctx.stroke();
-  }
-
-  function drawSoftGlow(path, width, glowMul) {
-    if (path.length < 2) return;
-    const first = path[0];
-    const last = path[path.length - 1];
-    const len = path.length;
-    ctx.save();
-    ctx.globalCompositeOperation = "lighter";
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-
-    const opacity = Math.max(0, Math.min(1, Number(cfg.trail_glow_opacity) || 1));
-    const widthFactor = Math.max(0.5, Math.min(3, Number(cfg.trail_glow_width) || 1));
-    const customColor = !!cfg.trail_glow_custom_color;
-
-    function glowPass(alpha, widthMul) {
-      const grad = ctx.createLinearGradient(first.x, first.y, last.x, last.y);
-      if (customColor) {
-        const c = hexToRgb(cfg.trail_glow_custom_color_val || "#ffffff");
-        grad.addColorStop(0, rgba(c, 1));
-        grad.addColorStop(1, rgba(c, 1));
-      } else {
-        const stops = Math.min(20, len);
-        for (let i = 0; i < stops; i++) {
-          const idx = Math.floor(i * (len - 1) / (stops - 1));
-          const rgb = speedToColor(path[idx].speed);
-          grad.addColorStop(i / (stops - 1), rgba(rgb, 1));
-        }
-      }
-      ctx.strokeStyle = grad;
-      ctx.globalAlpha = alpha * opacity;
-      ctx.lineWidth = width * glowMul * widthMul * widthFactor;
-      let segStart = 0;
-      for (let i = 1; i < len; i++) {
-        if (offscreen(path[i - 1], path[i])) {
-          strokePolyline(path, segStart, i - 1);
-          segStart = i;
-        }
-      }
-      strokePolyline(path, segStart, len - 1);
-    }
-
-    glowPass(0.16, 1.75);
-    glowPass(0.28, 1.0);
-
-    ctx.restore();
-  }
-
   function drawTrail(now) {
     if (!cfg.trail_enabled || points.length < 2) return;
 
     const life = (Number(cfg.trail_lifetime_ms) || 750) / 1000;
     const width = Number(cfg.trail_width) || 2.4;
     const glow = !!cfg.trail_glow;
-    const glowMul = 1.4 + Math.min(2.5, (Number(cfg.trail_glow_blur) || 6) / 10);
+    const glowBlur = Number(cfg.trail_glow_blur) || 6;
     const path = buildTrailPath();
+    if (path.length < 2) return;
 
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
-    if (glow) drawSoftGlow(path, width, glowMul);
-
-    ctx.save();
-    let lastStyle = "";
-    let lastWidth = -1;
-    let pathOpen = false;
-    for (let i = 1; i < path.length; i++) {
-      const a = path[i - 1];
-      const b = path[i];
-      const alpha = fadeAlpha(now - b.t, life);
-      if (alpha <= 0.008 || offscreen(a, b)) {
-        pathOpen = false;
-        continue;
+    // Build a gradient from the given points (samples up to maxStops stops for performance).
+    // When fullBrightAtEnd is true the final stop always has alpha=1 so the leading
+    // edge of a chunk never fades below full brightness.
+    function makePathGradient(pts, maxStops, fullBrightAtEnd) {
+      const g = ctx.createLinearGradient(pts[0].x, pts[0].y, pts[pts.length - 1].x, pts[pts.length - 1].y);
+      const s = Math.min(maxStops, pts.length);
+      for (let i = 0; i < s; i++) {
+        const p = pts[Math.floor(i * (pts.length - 1) / Math.max(s - 1, 1))];
+        const fa = (fullBrightAtEnd && i === s - 1) ? 1 : fadeAlpha(now - p.t, life);
+        g.addColorStop(i / Math.max(s - 1, 1), rgba(speedToColor(p.speed), fa));
       }
-      const rgb = speedToColor(b.speed);
-      const aq = Math.round(alpha * 8) / 8;
-      const style = rgba(rgb, aq);
-      const sp = Math.min(1, b.speed / (Number(cfg.speed_max) || 3200));
-      const lw = width * (0.9 + sp * 0.55);
-      if (style !== lastStyle || Math.abs(lw - lastWidth) > 0.35) {
-        if (pathOpen) ctx.stroke();
-        ctx.strokeStyle = style;
-        ctx.lineWidth = lw;
-        lastStyle = style;
-        lastWidth = lw;
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        pathOpen = true;
-      } else if (!pathOpen) {
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        pathOpen = true;
-      } else {
-        ctx.lineTo(b.x, b.y);
-      }
+      return g;
     }
-    if (pathOpen) ctx.stroke();
-    ctx.restore();
+
+    // Draw a continuous path with offscreen splitting
+    function strokePath(pts) {
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      let active = true;
+      for (let i = 1; i < pts.length; i++) {
+        if (offscreen(pts[i - 1], pts[i])) {
+          if (active) ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(pts[i].x, pts[i].y);
+          active = false;
+        } else {
+          ctx.lineTo(pts[i].x, pts[i].y);
+          active = true;
+        }
+      }
+      if (active) ctx.stroke();
+    }
+
+    // Glow pass
+    if (glow && glowBlur > 0) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.shadowBlur = glowBlur;
+      if (cfg.trail_glow_custom_color) {
+        const c = hexToRgb(cfg.trail_glow_custom_color_val || "#ffffff");
+        const glowOpacity = Math.max(0, Math.min(1, Number(cfg.trail_glow_opacity) || 1));
+        ctx.shadowColor = rgba(c, glowOpacity * 0.45);
+      } else {
+        ctx.shadowColor = "rgba(255,255,255,0.35)";
+      }
+      const widthFactor = Math.max(0.5, Math.min(3, Number(cfg.trail_glow_width) || 1));
+      ctx.lineWidth = width * 2.5 * widthFactor;
+      ctx.globalAlpha = 0.5;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = makePathGradient(path, 48);
+      strokePath(path);
+      ctx.restore();
+    }
+
+    // Core pass: per-chunk gradients
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = width * 1.2;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    const CHUNK_SIZE = 12;
+    for (let ci = 0; ci < path.length - 1; ci += CHUNK_SIZE) {
+      const end = Math.min(ci + CHUNK_SIZE + 1, path.length);
+      const chunk = path.slice(ci, end);
+      ctx.strokeStyle = makePathGradient(chunk, 12, end >= path.length);
+      strokePath(chunk);
+    }
   }
 
   function isClickButtonShown(button) {
@@ -1311,4 +1327,14 @@ function fadeAlpha(age, life) {
   }
   connect();
   requestAnimationFrame(frame);
+
+  window.addEventListener("message", (e) => {
+    if (!e.data || e.data.type !== "velo-patch") return;
+    try {
+      const patch = e.data.data;
+      if (!patch || typeof patch !== "object") return;
+      Object.assign(cfg, patch);
+      applyConfig(cfg);
+    } catch (_) {}
+  });
 

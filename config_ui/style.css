@@ -644,6 +644,22 @@ button, input, select, textarea {
   border-top: 0;
 }
 
+.block h3.sub-sec {
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 18px 0 11px;
+  padding-top: 12px;
+}
+
+.block hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 14px 0;
+}
+
 section[data-section="cursor"] h3.subhead:first-of-type {
   padding-top: 12px;
   border-top: 1px solid var(--line);
@@ -1070,6 +1086,20 @@ section[data-section="presets"] > .preset-import-block {
   font-size: 13px;
 }
 
+.input-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.input-row input[type="text"] {
+  flex: 1;
+}
+
+.input-row .btn {
+  flex-shrink: 0;
+}
+
 .field input:focus,
 .field select:focus {
   border-color: var(--focus);
@@ -1288,6 +1318,63 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .note strong { color: var(--text); font-weight: 600; }
+
+/* preset hotkey row */
+.phk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.phk-bind {
+  min-width: 90px;
+  text-align: center;
+  flex-shrink: 0;
+  font-size: 11.5px;
+  padding: 5px 8px;
+}
+
+.phk-bind.listening {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+select.phk-target {
+  flex: 1;
+  background: var(--elev);
+  border: 1px solid var(--line-2);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 12.5px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+select.phk-target option {
+  background: var(--elev);
+  color: var(--text);
+}
+
+.phk-clear {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  text-align: center;
+  line-height: 26px;
+  color: var(--muted);
+  font-size: 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.phk-clear:hover {
+  color: var(--danger);
+}
 
 .steps {
   padding-left: 18px;

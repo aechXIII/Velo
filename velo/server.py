@@ -18,7 +18,7 @@ from aiohttp.web_exceptions import HTTPException
 from velo.config import APP_VERSION, PRESET_EXCLUDE, ConfigStore
 from velo.config_schema import validate_config
 from velo.config_types import ConfigMap
-from velo.file_dialogs import open_json_dialog, save_json_dialog
+from velo.file_dialogs import open_image_dialog, open_json_dialog, save_json_dialog
 from velo.logging import get_logger
 from velo.metrics import metrics
 
@@ -300,6 +300,7 @@ class VeloServer:
         app.router.add_get("/api/metrics", self._safe_handler(self._handle_metrics))
         app.router.add_get("/api/onboarding", self._handle_onboarding_check)
         app.router.add_post("/api/onboarding/dismiss", self._handle_onboarding_dismiss)
+        app.router.add_post("/api/config/bg-image-dialog", self._handle_api_bg_image_dialog)
         app.router.add_get("/ws", self._handle_ws)
 
         host = self.config.get("host") or "0.0.0.0"
@@ -858,6 +859,38 @@ class VeloServer:
     async def _handle_onboarding_dismiss(self, request: web.Request) -> web.Response:
         self.config.update({"show_onboarding": False})
         return web.json_response({"status": "ok"})
+
+    async def _handle_api_bg_image_dialog(self, request: web.Request) -> web.Response:
+        denied = await self._require_auth(request)
+        if denied:
+            return denied
+        result = await self._run_dialog(
+            lambda: open_image_dialog("Choose background image")
+        )
+        if isinstance(result, web.Response):
+            return result
+        try:
+            import base64
+
+            raw = Path(result).read_bytes()
+            ext = Path(result).suffix.lower()
+            mime = "image/png"
+            if ext in (".jpg", ".jpeg"):
+                mime = "image/jpeg"
+            elif ext == ".gif":
+                mime = "image/gif"
+            elif ext == ".webp":
+                mime = "image/webp"
+            data_url = f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+            # cap at ~2MB
+            if len(data_url) > 2 * 1024 * 1024:
+                return web.json_response(
+                    {"ok": False, "error": "Image too large (max ~2MB)"}, status=400
+                )
+            self.config.update({"pad_bg_image": data_url}, persist=True)
+            return web.json_response({"ok": True, "data": {"pad_bg_image": data_url}})
+        except (OSError, ValueError) as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=500)
 
     def set_runtime_status(
         self, *, capture_running: bool = False, capture_error: Optional[str] = None

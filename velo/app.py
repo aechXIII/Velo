@@ -578,6 +578,10 @@ class VeloApp:
         spec = str((snap or {}).get("stats_reset_hotkey") or "").strip()
         if spec != (self._hotkey_spec or ""):
             self._apply_hotkeys(force=True)
+        # also re-apply if any preset hotkey changed
+        hotkeys = (snap or {}).get("preset_hotkeys") or []
+        if hotkeys:
+            self._apply_hotkeys(force=True)
         enabled = bool((snap or {}).get("start_with_windows"))
         if self._autostart_enabled is None or enabled != self._autostart_enabled:
             self._apply_autostart(force=True)
@@ -615,6 +619,21 @@ class VeloApp:
             logger.error("%s", self.hotkeys.last_error)
         elif not spec:
             logger.info("HUD reset hotkey: off")
+
+        # preset hotkeys - re-register all
+        # clear all bindings that start with "preset:"
+        hotkeys = self.config.get("preset_hotkeys") or []
+        # Re-register: add_binding with the same spec overwrites previous
+        seen: set = set()
+        for entry in hotkeys:
+            hk = str(entry.get("key") or "").strip()
+            target = str(entry.get("target") or "").strip()
+            if hk and target and hk not in seen:
+                seen.add(hk)
+                def _make_switch(name):
+                    return lambda: self.config.apply_preset(name)
+                self.hotkeys.add_binding(hk, _make_switch(target))
+        logger.info("Registered %d preset hotkeys", len(seen))
 
     def shutdown(self) -> None:
         self._stopping = True

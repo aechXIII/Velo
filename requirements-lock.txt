@@ -15,7 +15,7 @@ propcache==0.4.1
 proxy_tools==0.1.0
 pycparser==2.23
 pystray==0.19.5
-pythonnet==3.0.5; sys_platform == "win32"
+pythonnet==3.1.0; sys_platform == "win32"
 pywebview==6.2.1
 pywin32==312; sys_platform == "win32"
 six==1.17.0

@@ -10,7 +10,7 @@ clr_loader==0.2.10; sys_platform == "win32"
 frozenlist==1.8.0
 idna==3.18
 multidict==6.7.1
-pillow==11.3.0
+pillow==12.3.0
 propcache==0.4.1
 proxy_tools==0.1.0
 pycparser==2.23

@@ -1,5 +1,5 @@
 aiohttp==3.13.5
 pystray==0.19.5
-Pillow==11.3.0
+Pillow==12.3.0
 pywebview==6.2.1
 pywin32==312; sys_platform == "win32"

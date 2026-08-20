@@ -1,5 +1,33 @@
 # Changelog
 
+## [Unreleased]
+
+## [2.3.1] - 2026-08-20
+
+### Added
+- Persistent rotating logs, privacy-safe copied diagnostics, and About/Support shortcuts
+- Corrupt-config quarantine with automatic recovery from the latest valid backup
+- Portable itch.io channel support with Butler staging and itch-managed updates
+- WebView2 prerequisite checks, executable version metadata, release validation, and optional code-signing hooks
+- Privacy, security, and third-party license documentation
+
+### Fixed
+- Restore update ordering after the v2.2.0 artifacts incorrectly identified themselves as v2.3.0
+- Validate every current config setting across API requests, startup loading, imports, and preset codes
+- Persist HUD positions changed from the overlay and apply the configured capture sensitivity
+- Replace preset hotkeys atomically so removed bindings no longer remain active
+- Remove leaked config listeners after server restarts
+- Store background images as managed assets instead of embedding them in every config update
+- Keep updater checksum metadata after a restart
+- Export settings without connection credentials unless a full private backup is explicitly selected
+- Remove the Windows autostart registry entry during uninstall and disable autostart in itch-managed installs
+- Cap visible notifications reliably and respect reduced-motion preferences in the settings UI
+
+### Security
+- Prevent markup injection through imported preset hotkeys and add restrictive UI security headers
+- Require SHA-256 verification, trusted HTTPS origins, and size limits for update installers
+- Require authentication for onboarding state endpoints
+
 ## [2.2.0] - 2026-08-06
 
 ### Added

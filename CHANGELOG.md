@@ -1,5 +1,37 @@
 # Changelog
 
+## [2.3.1] - 2026-08-20
+
+### Added
+- Rotating logs, Copy diagnostics, and About & Support shortcuts
+- Corrupt config quarantine and recovery from backups
+- itch.io build with itch-managed updates
+- WebView2 check and installer fallback
+- Privacy, security, and third-party notices
+
+### Changed
+- Project license changed to GPL v3 or later
+- Background images stored as files instead of inside config
+- Settings exports hide local server credentials by default
+- Stricter validation for configs, imports, and preset codes
+- Autostart and in-app updates disabled in itch.io builds
+
+### Fixed
+- v2.2.0 installs reporting as v2.3.0 and missing the next update
+- HUD position not saving after dragging in the overlay
+- Capture sensitivity not being applied
+- Old preset hotkey still firing after rebinding
+- Config listeners leaking after server restarts
+- Update checksum state lost after restart
+- Autostart registry value left behind after uninstall
+- Notification limit and reduced motion
+
+### Security
+- HTML injection through imported preset hotkeys
+- CSP for settings and overlay
+- HTTPS, size, and SHA-256 checks for update installers
+- Authentication for onboarding endpoints
+
 ## [2.2.0] - 2026-08-06
 
 ### Added

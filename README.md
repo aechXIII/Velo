@@ -2,7 +2,7 @@
 
 Mouse Input overlay for OBS. Made for aim trainers and FPS games.
 
-[![Release](https://img.shields.io/github/v/release/aechXIII/Velo?style=flat-square&color=3B6AD8)](https://github.com/aechXIII/Velo/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-lightgrey?style=flat-square)]() [![Buy Me a Coffee](https://img.shields.io/badge/support-Buy%20Me%20a%20Coffee-F5A623?style=flat-square&logo=buy-me-a-coffee)](https://buymeacoffee.com/aechxiii)
+[![Release](https://img.shields.io/github/v/release/aechXIII/Velo?style=flat-square&color=3B6AD8)](https://github.com/aechXIII/Velo/releases) [![License: GPL v3+](https://img.shields.io/badge/license-GPLv3%2B-blue?style=flat-square)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-lightgrey?style=flat-square)]() [![Buy Me a Coffee](https://img.shields.io/badge/support-Buy%20Me%20a%20Coffee-F5A623?style=flat-square&logo=buy-me-a-coffee)](https://buymeacoffee.com/aechxiii)
 
 ---
 
@@ -140,4 +140,6 @@ Inspired by [input-overlay](https://github.com/girlglock/input-overlay).
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+GNU GPL v3 or later. See [LICENSE](LICENSE).
+
+The GPL covers Velo's source code. It does not grant permission to use the Velo name or logo for modified or unofficial distributions.

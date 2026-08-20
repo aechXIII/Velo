@@ -4,6 +4,17 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, without the v prefix"
+        required: true
+        type: string
+      deploy_itch:
+        description: "Deploy the validated build to the configured itch channel"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -11,6 +22,8 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.release_metadata.outputs.version }}
 
     steps:
       - name: Checkout
@@ -20,47 +33,166 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
+          cache: pip
+          cache-dependency-path: |
+            requirements-lock.txt
+            requirements-dev.txt
+
+      - name: Verify release metadata
+        id: release_metadata
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ inputs.version }}"
+            .\scripts\verify-release.ps1 -Version $version
+          } else {
+            $tag = "${{ github.ref_name }}"
+            .\scripts\verify-release.ps1 -Tag $tag
+            $version = $tag.TrimStart('v')
+          }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Install dependencies
         run: |
           python -m venv .venv
           .venv\Scripts\python.exe -m pip install --upgrade pip
-          .venv\Scripts\python.exe -m pip install -r requirements.txt
-          .venv\Scripts\python.exe -m pip install pyinstaller
+          .venv\Scripts\python.exe -m pip install -r requirements-lock.txt -r requirements-dev.txt
+
+      - name: Run release checks
+        shell: pwsh
+        run: |
+          .venv\Scripts\python.exe -m pytest tests/ -q --tb=short
+          .venv\Scripts\python.exe -m ruff check velo tests --select E9,F63,F7,F82
+          node --check config_ui/app.js
+          node --check overlay/app.js
 
       - name: Install Inno Setup 6
         run: choco install innosetup --no-progress -y
 
-      - name: Build EXE + installer
-        run: .\scripts\build.ps1 -Clean -Installer
+      - name: Prepare optional signing certificate
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
+          WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_BASE64)) {
+            Write-Host "No code-signing certificate configured; release artifacts will be unsigned."
+            exit 0
+          }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_PASSWORD)) {
+            throw "WINDOWS_SIGNING_CERT_PASSWORD is required when a certificate is configured."
+          }
+          $certificatePath = Join-Path $env:RUNNER_TEMP "velo-signing.pfx"
+          [IO.File]::WriteAllBytes(
+            $certificatePath,
+            [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERT_BASE64)
+          )
+          "VELO_SIGN_PFX=$certificatePath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "VELO_SIGN_PASSWORD=$env:WINDOWS_SIGNING_CERT_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Zip portable folder
+      - name: Build EXE, itch directory, and installer
+        run: .\scripts\build.ps1 -Clean -Itch -Installer
+
+      - name: Installer smoke test
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}".TrimStart('v')
-          Compress-Archive -Path "dist\Velo\*" -DestinationPath "dist\Velo-portable-$version.zip" -Force
+          $installer = Get-ChildItem -LiteralPath "installer\Output" -Filter "Velo-Setup-*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Installer not found." }
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/TASKS=") -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Installer failed with exit code $($install.ExitCode)." }
+          $installedExe = Join-Path $env:LOCALAPPDATA "Velo\Velo.exe"
+          $selfTest = Start-Process -FilePath $installedExe -ArgumentList "--self-test" -Wait -PassThru
+          if ($selfTest.ExitCode -ne 0) { throw "Installed self-test failed." }
+          $uninstaller = Join-Path $env:LOCALAPPDATA "Velo\unins000.exe"
+          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART") -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) { throw "Uninstaller failed with exit code $($uninstall.ExitCode)." }
+          $runValue = Get-ItemPropertyValue -LiteralPath "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Velo" -ErrorAction SilentlyContinue
+          if ($null -ne $runValue) { throw "Uninstaller left the Velo autostart registry value behind." }
+
+      - name: Install and run Butler validation
+        shell: pwsh
+        run: |
+          $directory = .\scripts\install-butler.ps1
+          & "$directory\butler.exe" validate --platform windows --arch amd64 "dist\Velo-itch"
+          if ($LASTEXITCODE -ne 0) { throw "Butler validation failed." }
+
+      - name: Package release artifacts and checksums
+        shell: pwsh
+        run: |
+          $version = "${{ steps.release_metadata.outputs.version }}"
+          $portable = "dist\Velo-portable-$version.zip"
+          Compress-Archive -Path "dist\Velo\*" -DestinationPath $portable -Force
+          $installer = Get-ChildItem -LiteralPath "installer\Output" -Filter "Velo-Setup-*.exe" | Select-Object -First 1
+          foreach ($artifact in @((Get-Item -LiteralPath $portable), $installer)) {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifact.FullName).Hash.ToLowerInvariant()
+            "$hash  $($artifact.Name)" | Set-Content -Encoding ascii "$($artifact.FullName).sha256"
+          }
 
       - name: Extract changelog section
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}".TrimStart('v')
-          if (-not (Test-Path "CHANGELOG.md")) {
-            "Velo $version" | Set-Content release-notes.md -Encoding UTF8
-            exit 0
-          }
-          $content  = Get-Content CHANGELOG.md -Raw
-          $pattern  = "(?s)## \[$([regex]::Escape($version))\].*?(?=\r?\n## \[|\z)"
-          $match    = [regex]::Match($content, $pattern)
-          if ($match.Success) {
-            $match.Value.Trim() | Set-Content release-notes.md -Encoding UTF8
-          } else {
-            "Velo $version" | Set-Content release-notes.md -Encoding UTF8
-          }
+          $version = "${{ steps.release_metadata.outputs.version }}"
+          $content = Get-Content CHANGELOG.md -Raw
+          $pattern = "(?s)## \[$([regex]::Escape($version))\].*?(?=\r?\n## \[|\z)"
+          $match = [regex]::Match($content, $pattern)
+          if (-not $match.Success) { throw "Changelog section missing for $version." }
+          $match.Value.Trim() | Set-Content release-notes.md -Encoding utf8
 
-      - name: Upload release
+      - name: Upload itch build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Velo-itch
+          path: dist/Velo-itch/
+          if-no-files-found: error
+          include-hidden-files: true
+
+      - name: Upload GitHub release
+        if: ${{ github.event_name == 'push' }}
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/Velo-portable-*.zip
+            dist/Velo-portable-*.zip.sha256
             installer/Output/Velo-Setup-*.exe
+            installer/Output/Velo-Setup-*.exe.sha256
           body_path: release-notes.md
+
+  deploy-itch:
+    needs: build
+    if: ${{ vars.ITCH_TARGET != '' && (github.event_name == 'push' || inputs.deploy_itch) }}
+    runs-on: windows-latest
+    environment: itch-production
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout release scripts
+        uses: actions/checkout@v4
+
+      - name: Download itch build
+        uses: actions/download-artifact@v4
+        with:
+          name: Velo-itch
+          path: dist/Velo-itch
+
+      - name: Install Butler
+        shell: pwsh
+        run: |
+          $directory = .\scripts\install-butler.ps1
+          "$directory" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Push itch release
+        shell: pwsh
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+          ITCH_TARGET: ${{ vars.ITCH_TARGET }}
+          ITCH_CHANNEL: ${{ vars.ITCH_CHANNEL }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:BUTLER_API_KEY)) { throw "BUTLER_API_KEY is not configured." }
+          if ($env:ITCH_TARGET -notmatch '^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$') {
+            throw "ITCH_TARGET must look like username/project and use lowercase URL slugs."
+          }
+          $channel = if ([string]::IsNullOrWhiteSpace($env:ITCH_CHANNEL)) { "windows-beta" } else { $env:ITCH_CHANNEL.Trim() }
+          if ($channel -notmatch '^[a-z0-9][a-z0-9._-]*$') { throw "Invalid ITCH_CHANNEL: $channel" }
+          $version = "${{ needs.build.outputs.version }}"
+          butler push "dist\Velo-itch" "${env:ITCH_TARGET}:$channel" --userversion $version

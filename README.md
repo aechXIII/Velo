@@ -78,7 +78,8 @@ Mouse Input overlay for OBS. Made for aim trainers and FPS games.
 - System tray with quick actions
 - In-app update checker with one-click install
 - Autostart with Windows, start minimized
-- Single instance- launching again opens the settings window
+- Single instance—launching again opens the settings window
+- Diagnostics and rotating logs for support
 
 ---
 
@@ -88,9 +89,11 @@ Mouse Input overlay for OBS. Made for aim trainers and FPS games.
 2. Run it (no admin needed)
 3. Installs to `%LOCALAPPDATA%\Velo`
 
-Config and presets live in `%APPDATA%\Velo` and survive updates.
+Config and presets are in `%APPDATA%\Velo`.
 
-Requires Windows 10 or 11 (64-bit) and [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (already included on Windows 11).
+Requires Windows 10 or 11 (64-bit) and [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/). The installer sets up WebView2 when it is missing. The portable build shows a download link instead.
+
+GitHub builds update through Velo. itch.io builds update through the itch app and leave Windows autostart off.
 
 ---
 
@@ -99,13 +102,13 @@ Requires Windows 10 or 11 (64-bit) and [WebView2](https://developer.microsoft.co
 1. Start Velo
 2. Open Settings → OBS and copy the URL
 3. In OBS: add a Browser source and paste the URL
-4. Set the browser width/height to match what you have under Size (or use Copy size)
+4. Set the browser width/height to match what you have under Size
 5. Uncheck "Shutdown source when not visible"
 6. Leave the background transparent
 
 Common sizes: 480×480 or 640×360 for a corner pad.
 
-Set the settings preview to Off or Lite while streaming or recording if you want to save CPU.
+Set the settings preview to Off or Auto while streaming or recording if you want to save CPU.
 
 ---
 
@@ -115,6 +118,17 @@ Set the settings preview to Off or Lite while streaming or recording if you want
 |---|---|
 | Config | `%APPDATA%\Velo\config.json` |
 | Presets | `%APPDATA%\Velo\presets\` |
+| Managed images | `%APPDATA%\Velo\assets\` |
+| Backups | `%APPDATA%\Velo\backups\` |
+| Logs | `%APPDATA%\Velo\logs\` |
+
+Broken configs are moved to `%APPDATA%\Velo\recovery\` before Velo restores a backup or loads safe defaults.
+
+## Privacy and support
+
+Velo has no analytics, telemetry, ads, or automatic crash reporting. It runs a local server for OBS and checks GitHub for updates in standard builds. See [PRIVACY.md](PRIVACY.md) for details.
+
+Settings → About & Support can copy diagnostics, open the log and config folders, or report a bug. Diagnostics and normal settings exports leave out connection credentials. Full backups include them and should stay private.
 
 ---
 
@@ -128,9 +142,10 @@ Set the settings preview to Off or Lite while streaming or recording if you want
 ```powershell
 .\scripts\build.ps1 -Clean
 .\scripts\build.ps1 -Clean -Installer
+.\scripts\build.ps1 -Clean -Itch
 ```
 
-The installer build needs [Inno Setup 6](https://jrsoftware.org/isdl.php). Output goes to `dist\Velo\` and `installer\Output\Velo-Setup-*.exe`.
+Installer builds need [Inno Setup 6](https://jrsoftware.org/isdl.php). Output goes to `dist\Velo\`, `dist\Velo-itch\`, or `installer\Output\Velo-Setup-*.exe`.
 
 ---
 
@@ -140,6 +155,6 @@ Inspired by [input-overlay](https://github.com/girlglock/input-overlay).
 
 ## License
 
-GNU GPL v3 or later. See [LICENSE](LICENSE).
+GNU GPL v3 or later. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 The GPL covers Velo's source code. It does not grant permission to use the Velo name or logo for modified or unofficial distributions.

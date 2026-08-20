@@ -13,7 +13,7 @@ multidict==6.7.1
 pillow==11.3.0
 propcache==0.4.1
 proxy_tools==0.1.0
-pycparser==2.23
+pycparser==3.0
 pystray==0.19.5
 pythonnet==3.0.5; sys_platform == "win32"
 pywebview==6.2.1

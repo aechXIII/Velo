@@ -139,7 +139,7 @@ jobs:
           $match.Value.Trim() | Set-Content release-notes.md -Encoding utf8
 
       - name: Upload itch build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Velo-itch
           path: dist/Velo-itch/

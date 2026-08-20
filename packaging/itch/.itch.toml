@@ -2,3 +2,4 @@
 name = "play"
 path = "Velo.exe"
 platform = "windows"
+args = ["--itch-app"]

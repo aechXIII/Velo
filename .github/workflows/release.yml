@@ -106,8 +106,10 @@ jobs:
           $uninstaller = Join-Path $env:LOCALAPPDATA "Velo\unins000.exe"
           $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART") -Wait -PassThru
           if ($uninstall.ExitCode -ne 0) { throw "Uninstaller failed with exit code $($uninstall.ExitCode)." }
-          $runValue = Get-ItemPropertyValue -LiteralPath "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Velo" -ErrorAction SilentlyContinue
-          if ($null -ne $runValue) { throw "Uninstaller left the Velo autostart registry value behind." }
+          $runKey = Get-ItemProperty -LiteralPath "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -ErrorAction SilentlyContinue
+          if ($null -ne $runKey -and $null -ne $runKey.PSObject.Properties["Velo"]) {
+            throw "Uninstaller left the Velo autostart registry value behind."
+          }
 
       - name: Install and run Butler validation
         shell: pwsh
@@ -186,13 +188,13 @@ jobs:
         env:
           BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
           ITCH_TARGET: ${{ vars.ITCH_TARGET }}
-          ITCH_CHANNEL: ${{ vars.ITCH_CHANNEL }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:BUTLER_API_KEY)) { throw "BUTLER_API_KEY is not configured." }
+          if ([string]::IsNullOrWhiteSpace($env:BUTLER_API_KEY)) {
+            throw "BUTLER_API_KEY is missing. Add it as an Environment secret (not an Environment variable) in itch-production."
+          }
           if ($env:ITCH_TARGET -notmatch '^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$') {
             throw "ITCH_TARGET must look like username/project and use lowercase URL slugs."
           }
-          $channel = if ([string]::IsNullOrWhiteSpace($env:ITCH_CHANNEL)) { "windows-beta" } else { $env:ITCH_CHANNEL.Trim() }
-          if ($channel -notmatch '^[a-z0-9][a-z0-9._-]*$') { throw "Invalid ITCH_CHANNEL: $channel" }
+          $channel = if ("${{ github.event_name }}" -eq "push") { "windows" } else { "windows-beta" }
           $version = "${{ needs.build.outputs.version }}"
           butler push "dist\Velo-itch" "${env:ITCH_TARGET}:$channel" --userversion $version

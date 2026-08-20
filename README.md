@@ -93,7 +93,7 @@ Config and presets are in `%APPDATA%\Velo`.
 
 Requires Windows 10 or 11 (64-bit) and [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/). The installer sets up WebView2 when it is missing. The portable build shows a download link instead.
 
-GitHub builds update through Velo. itch.io builds update through the itch app and leave Windows autostart off.
+Direct downloads update through Velo and support Windows autostart. When Velo is launched through the itch app, itch manages updates and autostart is unavailable.
 
 ---
 

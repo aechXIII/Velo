@@ -948,7 +948,7 @@ updateTrailColorUi();
       autoNote.hidden = autostartSupported;
       autoNote.textContent = autostartSupported
         ? ""
-        : "Autostart is unavailable in the itch.io edition so uninstalling cannot leave a registry entry behind.";
+        : "Autostart is unavailable when Velo is launched through the itch.io app.";
     }
     if (minLabel) minLabel.classList.toggle("is-disabled", !auto || !autostartSupported);
     if (minChk) {

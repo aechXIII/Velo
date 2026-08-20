@@ -358,13 +358,15 @@ class VeloApp:
             self._create_settings_window(webview)
 
             try:
+                distribution.unblock_packaged_settings_runtime()
                 logger.debug("starting webview event loop")
                 webview.start(debug=False)
             except (OSError, RuntimeError) as exc:
                 _win_message(
                     "Velo - settings window failed",
                     f"Could not open the settings UI.\n\n{exc}\n\n"
-                    "On Windows, pywebview needs a WebView2 runtime (Edge).",
+                    "Restart Velo. If it still fails, include the latest file from "
+                    "%APPDATA%\\Velo\\logs when reporting it.",
                     error=True,
                 )
             self._window = None
@@ -704,6 +706,10 @@ def _self_test() -> Optional[str]:
     if dep_err:
         return dep_err
     try:
+        distribution.unblock_packaged_settings_runtime()
+        if sys.platform == "win32":
+            import webview.platforms.winforms  # noqa: F401
+
         from velo.server import CONFIG_UI_DIR, OVERLAY_DIR
 
         required = (

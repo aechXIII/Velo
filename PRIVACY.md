@@ -12,7 +12,7 @@ Normal settings exports leave out the local server host, port, and authenticatio
 
 Velo runs a local HTTP/WebSocket server for Settings and the OBS Browser Source. It uses a random authentication token. Changing the host from `127.0.0.1` can make the server reachable from other devices on your network.
 
-Standard builds contact GitHub Releases when update checks are enabled. Installing an update downloads the installer and its SHA-256 checksum from GitHub. itch.io builds leave updates to the itch app.
+Standard builds and direct itch.io downloads contact GitHub Releases when update checks are enabled. Installing an update downloads the installer and its SHA-256 checksum from GitHub. Launches through the itch app leave updates to itch.
 
 The installer uses Microsoft's WebView2 bootstrapper when WebView2 is missing. Support links open GitHub in your default browser.
 

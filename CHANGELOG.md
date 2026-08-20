@@ -5,7 +5,7 @@
 ### Added
 - Rotating logs, Copy diagnostics, and About & Support shortcuts
 - Corrupt config quarantine and recovery from backups
-- itch.io build with itch-managed updates
+- itch.io build with optional itch app updates
 - WebView2 check and installer fallback
 - Privacy, security, and third-party notices
 
@@ -14,7 +14,7 @@
 - Background images stored as files instead of inside config
 - Settings exports hide local server credentials by default
 - Stricter validation for configs, imports, and preset codes
-- Autostart and in-app updates disabled in itch.io builds
+- Autostart and in-app updates disabled when launched through the itch app
 
 ### Fixed
 - v2.2.0 installs reporting as v2.3.0 and missing the next update

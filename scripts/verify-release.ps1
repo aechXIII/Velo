@@ -43,7 +43,7 @@ if ($Version -and $actualVersion -ne $Version) {
 }
 
 $changelog = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($changelog -notmatch "(?m)^## \[$([regex]::Escape($actualVersion))\] - \d{4}-\d{2}-\d{2}$") {
+if ($changelog -notmatch "(?m)^## \[$([regex]::Escape($actualVersion))\] - \d{4}-\d{2}-\d{2}\r?$") {
   throw "CHANGELOG.md has no dated section for $actualVersion."
 }
 if (-not (Test-Path -LiteralPath "requirements-lock.txt")) {

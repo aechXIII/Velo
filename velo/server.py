@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import hmac
 import json
 import mimetypes
 import sys
 import threading
 import time
+import webbrowser
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
@@ -18,8 +20,22 @@ from aiohttp.web_exceptions import HTTPException
 from velo.config import APP_VERSION, PRESET_EXCLUDE, ConfigStore
 from velo.config_schema import validate_config
 from velo.config_types import ConfigMap
+from velo.diagnostics import (
+    GITHUB_URL,
+    ISSUES_URL,
+    collect_diagnostics,
+    format_diagnostics,
+    open_file,
+    open_folder,
+)
+from velo.distribution import (
+    autostart_supported,
+    distribution_channel,
+    distribution_label,
+    executable_root,
+)
 from velo.file_dialogs import open_image_dialog, open_json_dialog, save_json_dialog
-from velo.logging import get_logger
+from velo.logging import get_logger, log_dir
 from velo.metrics import metrics
 
 RestartCallback = Callable[[], None]
@@ -71,6 +87,7 @@ class VeloServer:
         self._flush_scheduled = False
         self._capture_running = False
         self._capture_error: Optional[str] = None
+        self._last_public = self.config.overlay_public()
         self.config.on_change(self._on_config_change)
 
     def set_restart_callback(self, cb: RestartCallback) -> None:
@@ -112,34 +129,37 @@ class VeloServer:
                 break
             time.sleep(0.025)
 
+    async def _shutdown_clients_and_runner(self) -> None:
+        with self._lock:
+            clients = list(self._clients)
+        for ws in clients:
+            try:
+                await ws.close(code=1001, message=b"server stop")
+            except (ConnectionError, RuntimeError, OSError) as exc:
+                self._logger.debug("Could not close client socket cleanly: %s", exc)
+        if self._runner:
+            await self._runner.cleanup()
+
+    def _stop_event_loop(self) -> None:
+        if not (self._loop and self._runner):
+            return
+        try:
+            fut = asyncio.run_coroutine_threadsafe(self._shutdown_clients_and_runner(), self._loop)
+            fut.result(timeout=3.0)
+        except (TimeoutError, RuntimeError, OSError) as exc:
+            self._logger.debug("Server shutdown coroutine did not complete cleanly: %s", exc)
+        try:
+            self._loop.call_soon_threadsafe(self._loop.stop)
+        except RuntimeError as exc:
+            self._logger.debug("Could not stop event loop: %s", exc)
+
     def stop(self) -> None:
         self._stop_flag.set()
         try:
             self.config.remove_listener(self._on_config_change)
-        except ValueError:
-            pass
-        if self._loop and self._runner:
-
-            async def _shutdown() -> None:
-                with self._lock:
-                    clients = list(self._clients)
-                for ws in clients:
-                    try:
-                        await ws.close(code=1001, message=b"server stop")
-                    except (ConnectionError, RuntimeError, OSError):
-                        pass
-                if self._runner:
-                    await self._runner.cleanup()
-
-            try:
-                fut = asyncio.run_coroutine_threadsafe(_shutdown(), self._loop)
-                fut.result(timeout=3.0)
-            except (TimeoutError, RuntimeError, OSError):
-                pass
-            try:
-                self._loop.call_soon_threadsafe(self._loop.stop)
-            except RuntimeError:
-                pass
+        except ValueError as exc:
+            self._logger.debug("Config listener already removed: %s", exc)
+        self._stop_event_loop()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=3.0)
         self._running = False
@@ -165,7 +185,15 @@ class VeloServer:
             if snap is None
             else {k: v for k, v in snap.items() if k != "auth_token"}
         )
-        payload = {"type": "config", "data": public}
+        patch = {
+            key: value
+            for key, value in public.items()
+            if key not in self._last_public or self._last_public[key] != value
+        }
+        self._last_public = public
+        if not patch:
+            return
+        payload = {"type": "config", "data": patch}
         if not self._loop or not self._running:
             return
         msg = json.dumps(payload, separators=(",", ":"))
@@ -248,20 +276,19 @@ class VeloServer:
             try:
                 if self._runner and self._loop:
                     self._loop.run_until_complete(self._runner.cleanup())
-            except (RuntimeError, OSError):
-                pass
+            except (RuntimeError, OSError) as exc:
+                self._logger.debug("Could not clean up runner after failed start: %s", exc)
             try:
                 if self._loop:
                     self._loop.run_until_complete(self._loop.shutdown_asyncgens())
-            except RuntimeError:
-                pass
+            except RuntimeError as exc:
+                self._logger.debug("Could not shut down async generators after failed start: %s", exc)
             if self._loop:
                 self._loop.close()
             self._loop = None
             self._running = False
 
-    async def _start_app(self) -> None:
-        app = web.Application()
+    def _register_content_routes(self, app: web.Application) -> None:
         app.router.add_get("/", self._handle_root)
         app.router.add_get("/config", self._handle_config_ui)
         app.router.add_get("/config/", self._handle_config_ui)
@@ -269,6 +296,10 @@ class VeloServer:
         app.router.add_get("/overlay/", self._handle_overlay)
         app.router.add_get("/static/{path:.*}", self._handle_static)
         app.router.add_get("/ui/{path:.*}", self._handle_config_static)
+        app.router.add_get("/user-assets/{name}", self._handle_user_asset)
+        app.router.add_get("/ws", self._handle_ws)
+
+    def _register_config_api_routes(self, app: web.Application) -> None:
         app.router.add_get("/api/config", self._handle_api_config_get)
         app.router.add_post("/api/config", self._handle_api_config_post)
         app.router.add_post("/api/config/reset", self._handle_api_config_reset)
@@ -278,6 +309,9 @@ class VeloServer:
         app.router.add_post("/api/config/import", self._handle_api_config_import)
         app.router.add_post("/api/config/import-dialog", self._handle_api_config_import_dialog)
         app.router.add_post("/api/config/preset", self._handle_api_preset)
+        app.router.add_post("/api/config/bg-image-dialog", self._handle_api_bg_image_dialog)
+
+    def _register_preset_api_routes(self, app: web.Application) -> None:
         app.router.add_get("/api/presets", self._handle_api_presets)
         app.router.add_post("/api/presets/save", self._handle_api_presets_save)
         app.router.add_post("/api/presets/update", self._handle_api_presets_update)
@@ -287,6 +321,8 @@ class VeloServer:
         app.router.add_post("/api/presets/import-dialog", self._handle_api_presets_import_dialog)
         app.router.add_post("/api/presets/share", self._handle_api_presets_share)
         app.router.add_post("/api/presets/import-share", self._handle_api_presets_import_share)
+
+    def _register_update_api_routes(self, app: web.Application) -> None:
         app.router.add_post("/api/server/restart", self._handle_api_restart)
         app.router.add_post("/api/stats/reset", self._handle_api_stats_reset)
         app.router.add_post("/api/app/show", self._handle_api_app_show)
@@ -295,13 +331,37 @@ class VeloServer:
         app.router.add_post("/api/update/remind", self._handle_api_update_remind)
         app.router.add_post("/api/update/skip", self._handle_api_update_skip)
         app.router.add_post("/api/update/install", self._handle_api_update_install)
+
+    def _register_support_api_routes(self, app: web.Application) -> None:
         app.router.add_get("/api/health", self._safe_handler(self._handle_health))
         app.router.add_get("/api/status", self._handle_status)
         app.router.add_get("/api/metrics", self._safe_handler(self._handle_metrics))
+        app.router.add_get("/api/diagnostics", self._safe_handler(self._handle_diagnostics))
+        app.router.add_post(
+            "/api/support/open-logs", self._safe_handler(self._handle_support_open_logs)
+        )
+        app.router.add_post(
+            "/api/support/open-config", self._safe_handler(self._handle_support_open_config)
+        )
+        app.router.add_post(
+            "/api/support/report", self._safe_handler(self._handle_support_report)
+        )
+        app.router.add_post(
+            "/api/support/project", self._safe_handler(self._handle_support_project)
+        )
+        app.router.add_post(
+            "/api/support/licenses", self._safe_handler(self._handle_support_licenses)
+        )
         app.router.add_get("/api/onboarding", self._handle_onboarding_check)
         app.router.add_post("/api/onboarding/dismiss", self._handle_onboarding_dismiss)
-        app.router.add_post("/api/config/bg-image-dialog", self._handle_api_bg_image_dialog)
-        app.router.add_get("/ws", self._handle_ws)
+
+    async def _start_app(self) -> None:
+        app = web.Application(client_max_size=2 * 1024 * 1024)
+        self._register_content_routes(app)
+        self._register_config_api_routes(app)
+        self._register_preset_api_routes(app)
+        self._register_update_api_routes(app)
+        self._register_support_api_routes(app)
 
         host = self.config.get("host") or "0.0.0.0"
         if not host or host in ("0.0.0.0", "::"):
@@ -324,10 +384,13 @@ class VeloServer:
         if not expected:
             return True
         got = request.rel_url.query.get("token", "")
-        if got == expected:
+        if got and hmac.compare_digest(got, expected):
+            return True
+        cookie = request.cookies.get("velo_auth", "")
+        if cookie and hmac.compare_digest(cookie, expected):
             return True
         auth = request.headers.get("Authorization", "")
-        if auth.startswith("Bearer ") and auth[7:] == expected:
+        if auth.startswith("Bearer ") and hmac.compare_digest(auth[7:], expected):
             return True
         return False
 
@@ -410,19 +473,33 @@ class VeloServer:
         path = OVERLAY_DIR / "index.html"
         if not path.is_file():
             return web.Response(text="Overlay not found", status=404)
-        return web.FileResponse(
+        response = web.FileResponse(
             path,
-            headers={"Cache-Control": "no-store", "Content-Type": "text/html; charset=utf-8"},
+            headers=self._page_headers(),
         )
+        token = request.rel_url.query.get("token", "")
+        expected = str(self.config.get("auth_token") or "")
+        if token and expected and hmac.compare_digest(token, expected):
+            response.set_cookie(
+                "velo_auth", token, httponly=True, samesite="Strict", path="/"
+            )
+        return response
 
     async def _handle_config_ui(self, request: web.Request) -> web.StreamResponse:
         path = CONFIG_UI_DIR / "index.html"
         if not path.is_file():
             return web.Response(text="Config UI not found", status=404)
-        return web.FileResponse(
+        response = web.FileResponse(
             path,
-            headers={"Cache-Control": "no-store", "Content-Type": "text/html; charset=utf-8"},
+            headers=self._page_headers(),
         )
+        token = request.rel_url.query.get("token", "")
+        expected = str(self.config.get("auth_token") or "")
+        if token and expected and hmac.compare_digest(token, expected):
+            response.set_cookie(
+                "velo_auth", token, httponly=True, samesite="Strict", path="/"
+            )
+        return response
 
     async def _handle_static(self, request: web.Request) -> web.StreamResponse:
         return self._safe_file(OVERLAY_DIR, request.match_info.get("path", ""))
@@ -430,16 +507,41 @@ class VeloServer:
     async def _handle_config_static(self, request: web.Request) -> web.StreamResponse:
         return self._safe_file(CONFIG_UI_DIR, request.match_info.get("path", ""))
 
-    def _safe_file(self, root: Path, rel: str) -> web.StreamResponse:
+    async def _handle_user_asset(self, request: web.Request) -> web.StreamResponse:
+        name = request.match_info.get("name", "")
+        if not name.startswith("background-") or Path(name).name != name:
+            return web.Response(text="Not found", status=404)
+        return self._safe_file(self.config.user_assets_dir(), name, cache=True)
+
+    @staticmethod
+    def _page_headers() -> Dict[str, str]:
+        return {
+            "Cache-Control": "no-store",
+            "Content-Type": "text/html; charset=utf-8",
+            "Content-Security-Policy": (
+                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: blob:; connect-src 'self' ws: wss:; frame-src 'self'; "
+                "object-src 'none'; base-uri 'none'; frame-ancestors 'self' obs:"
+            ),
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+        }
+
+    def _safe_file(self, root: Path, rel: str, *, cache: bool = False) -> web.StreamResponse:
         target = (root / rel).resolve()
         base = root.resolve()
-        if not str(target).startswith(str(base)) or not target.is_file():
+        if not target.is_relative_to(base) or not target.is_file():
             return web.Response(text="Not found", status=404)
         ctype = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
         if target.suffix.lower() == ".js" and "javascript" not in ctype:
             ctype = "application/javascript"
         return web.FileResponse(
-            target, headers={"Content-Type": ctype, "Cache-Control": "no-store"}
+            target,
+            headers={
+                "Content-Type": ctype,
+                "Cache-Control": "public, max-age=31536000, immutable" if cache else "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
         )
 
     async def _handle_api_config_get(self, request: web.Request) -> web.Response:
@@ -456,13 +558,17 @@ class VeloServer:
         if err:
             return err
         assert patch is not None
-        validation_errors = validate_config(patch)
+        validation_errors = validate_config(patch, strict=True)
         if validation_errors:
             return web.json_response(
                 {"ok": False, "error": "validation failed", "validation_errors": validation_errors},
                 status=400,
             )
-        return self._ok_snap(self.config.update(patch, persist=True))
+        try:
+            snap = self.config.update(patch, persist=True)
+        except ValueError as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=400)
+        return self._ok_snap(snap)
 
     async def _handle_api_config_reset(self, request: web.Request) -> web.Response:
         denied = await self._require_auth(request)
@@ -480,7 +586,7 @@ class VeloServer:
         denied = await self._require_auth(request)
         if denied:
             return denied
-        include = request.rel_url.query.get("connection", "1") not in ("0", "false", "no")
+        include = request.rel_url.query.get("connection", "0") not in ("0", "false", "no")
         return web.json_response(
             {"ok": True, "bundle": self.config.export_bundle(include_connection=include)}
         )
@@ -490,7 +596,7 @@ class VeloServer:
         if denied:
             return denied
         body = await self._read_json_optional(request)
-        include = bool(body.get("include_connection", True))
+        include = bool(body.get("include_connection", False))
         result = await self._run_dialog(
             lambda: save_json_dialog("Export Velo settings", "velo-settings.json")
         )
@@ -560,7 +666,11 @@ class VeloServer:
         if not name:
             return web.json_response({"ok": False, "error": "name required"}, status=400)
         kind = body.get("kind")
-        return self._ok_snap(self.config.apply_preset(name, kind=kind))
+        try:
+            snap = self.config.apply_preset(name, kind=kind)
+        except ValueError as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=400)
+        return self._ok_snap(snap)
 
     async def _preset_mutate(
         self,
@@ -808,10 +918,10 @@ class VeloServer:
             raw = await request.json()
             if isinstance(raw, dict):
                 return raw
-        except (json.JSONDecodeError, TypeError, ValueError, HTTPException):
-            pass
-        except Exception:
-            pass
+        except (json.JSONDecodeError, TypeError, ValueError, HTTPException) as exc:
+            self._logger.debug("Request body is not a JSON object: %s", exc)
+        except Exception as exc:
+            self._logger.debug("Could not read request body: %s", exc)
         return {}
 
     async def _handle_api_update_install(self, request: web.Request) -> web.Response:
@@ -853,10 +963,16 @@ class VeloServer:
         return web.json_response({"ok": True, "metrics": metrics.snapshot()})
 
     async def _handle_onboarding_check(self, request: web.Request) -> web.Response:
+        denied = await self._require_auth(request)
+        if denied:
+            return denied
         config = self.config.snapshot()
         return web.json_response({"show": config.get("show_onboarding", True)})
 
     async def _handle_onboarding_dismiss(self, request: web.Request) -> web.Response:
+        denied = await self._require_auth(request)
+        if denied:
+            return denied
         self.config.update({"show_onboarding": False})
         return web.json_response({"status": "ok"})
 
@@ -870,33 +986,86 @@ class VeloServer:
         if isinstance(result, web.Response):
             return result
         try:
-            import base64
-
-            raw = Path(result).read_bytes()
-            ext = Path(result).suffix.lower()
-            mime = "image/png"
-            if ext in (".jpg", ".jpeg"):
-                mime = "image/jpeg"
-            elif ext == ".gif":
-                mime = "image/gif"
-            elif ext == ".webp":
-                mime = "image/webp"
-            data_url = f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
-            # cap at ~2MB
-            if len(data_url) > 2 * 1024 * 1024:
-                return web.json_response(
-                    {"ok": False, "error": "Image too large (max ~2MB)"}, status=400
-                )
-            self.config.update({"pad_bg_image": data_url}, persist=True)
-            return web.json_response({"ok": True, "data": {"pad_bg_image": data_url}})
+            asset_url = self.config.store_background_image(Path(result))
+            self.config.update({"pad_bg_image": asset_url}, persist=True)
+            return web.json_response({"ok": True, "data": {"pad_bg_image": asset_url}})
         except (OSError, ValueError) as exc:
-            return web.json_response({"ok": False, "error": str(exc)}, status=500)
+            return web.json_response({"ok": False, "error": str(exc)}, status=400)
 
     def set_runtime_status(
         self, *, capture_running: bool = False, capture_error: Optional[str] = None
     ) -> None:
         self._capture_running = capture_running
         self._capture_error = capture_error
+
+    def _diagnostics_payload(self) -> JsonDict:
+        data = collect_diagnostics(
+            server_status={
+                "running": self._running,
+                "clients": self.client_count,
+                "error": self._last_error,
+            },
+            capture_running=self._capture_running,
+            capture_error=self._capture_error,
+            recovery_notice=self.config.recovery_notice,
+        )
+        return {"ok": True, "data": data, "text": format_diagnostics(data)}
+
+    async def _handle_diagnostics(self, request: web.Request) -> web.Response:
+        denied = await self._require_auth(request)
+        if denied:
+            return denied
+        return web.json_response(self._diagnostics_payload())
+
+    async def _handle_support_open_logs(self, request: web.Request) -> web.Response:
+        denied = await self._require_auth(request)
+        if denied:
+            return denied
+        try:
+            open_folder(log_dir())
+        except (OSError, RuntimeError) as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=500)
+        return web.json_response({"ok": True})
+
+    async def _handle_support_open_config(self, request: web.Request) -> web.Response:
+        denied = await self._require_auth(request)
+        if denied:
+            return denied
+        try:
+            open_folder(self.config.path.parent)
+        except (OSError, RuntimeError) as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=500)
+        return web.json_response({"ok": True})
+
+    async def _handle_support_report(self, request: web.Request) -> web.Response:
+        denied = await self._require_auth(request)
+        if denied:
+            return denied
+        try:
+            webbrowser.open(ISSUES_URL)
+        except webbrowser.Error as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=500)
+        return web.json_response({"ok": True, "url": ISSUES_URL})
+
+    async def _handle_support_project(self, request: web.Request) -> web.Response:
+        denied = await self._require_auth(request)
+        if denied:
+            return denied
+        try:
+            webbrowser.open(GITHUB_URL)
+        except webbrowser.Error as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=500)
+        return web.json_response({"ok": True, "url": GITHUB_URL})
+
+    async def _handle_support_licenses(self, request: web.Request) -> web.Response:
+        denied = await self._require_auth(request)
+        if denied:
+            return denied
+        try:
+            open_file(executable_root() / "THIRD_PARTY_NOTICES.md")
+        except (OSError, RuntimeError) as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=500)
+        return web.json_response({"ok": True})
 
     async def _handle_status(self, request: web.Request) -> web.Response:
         denied = await self._require_auth(request)
@@ -914,9 +1083,54 @@ class VeloServer:
                 "capture_running": self._capture_running,
                 "capture_error": self._capture_error,
                 "version": APP_VERSION,
+                "distribution": distribution_channel(),
+                "distribution_label": distribution_label(),
+                "autostart_supported": autostart_supported(),
+                "recovery_notice": self.config.recovery_notice,
                 "exclude_keys": sorted(PRESET_EXCLUDE),
             }
         )
+
+    async def _send_ws_config(self, ws: web.WebSocketResponse) -> None:
+        await ws.send_str(
+            json.dumps(
+                {"type": "config", "data": self.config.overlay_public()},
+                separators=(",", ":"),
+            )
+        )
+
+    async def _apply_ws_config_patch(self, ws: web.WebSocketResponse, patch: Any) -> None:
+        allowed = {"stats_x_pct", "stats_y_pct"}
+        if not isinstance(patch, dict) or set(patch) - allowed:
+            await ws.send_str(json.dumps({"type": "error", "error": "unsupported config patch"}))
+            return
+        errors = validate_config(patch, strict=True)
+        if errors:
+            await ws.send_str(json.dumps({"type": "error", "error": "; ".join(errors)}))
+            return
+        try:
+            self.config.update(patch, persist=True)
+        except ValueError as exc:
+            await ws.send_str(json.dumps({"type": "error", "error": str(exc)}))
+
+    async def _dispatch_ws_message(self, ws: web.WebSocketResponse, raw: str) -> None:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return
+        msg_type = data.get("type")
+        if msg_type == "get_config":
+            await self._send_ws_config(ws)
+        elif msg_type == "config":
+            await self._apply_ws_config_patch(ws, data.get("data"))
+
+    async def _ws_ping_loop(self, ws: web.WebSocketResponse) -> None:
+        try:
+            while True:
+                await asyncio.sleep(15)
+                await ws.ping()
+        except asyncio.CancelledError:
+            pass  # expected: task is cancelled when the connection closes
 
     async def _handle_ws(self, request: web.Request) -> web.StreamResponse:
         if not self._token_ok(request):
@@ -928,43 +1142,24 @@ class VeloServer:
         with self._lock:
             self._clients.add(ws)
 
-        public = self.config.overlay_public()
         await ws.send_str(
             json.dumps(
                 {
                     "type": "hello",
                     "app": "Velo",
                     "version": APP_VERSION,
-                    "data": public,
+                    "data": self.config.overlay_public(),
                 },
                 separators=(",", ":"),
             )
         )
 
-        async def _ping_loop() -> None:
-            try:
-                while True:
-                    await asyncio.sleep(15)
-                    await ws.ping()
-            except asyncio.CancelledError:
-                pass
-
-        ping_task = asyncio.create_task(_ping_loop())
+        ping_task = asyncio.create_task(self._ws_ping_loop(ws))
 
         try:
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:
-                    try:
-                        data = json.loads(msg.data)
-                    except json.JSONDecodeError:
-                        continue
-                    if data.get("type") == "get_config":
-                        await ws.send_str(
-                            json.dumps(
-                                {"type": "config", "data": self.config.overlay_public()},
-                                separators=(",", ":"),
-                            )
-                        )
+                    await self._dispatch_ws_message(ws, msg.data)
                 elif msg.type in (WSMsgType.ERROR, WSMsgType.CLOSE):
                     break
         finally:

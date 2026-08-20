@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import threading
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import pystray
 from PIL import Image
 
 from velo import __version__
 from velo.assets import load_icon
+from velo.logging import get_logger
+
+logger = get_logger()
 
 
 class TrayApp:
@@ -38,19 +41,28 @@ class TrayApp:
         self._icon: Optional[pystray.Icon] = None
         self._thread: Optional[threading.Thread] = None
 
+    @staticmethod
+    def _adapt(callback: Callable[[], None]) -> Callable[[Any, Any], None]:
+        """Wrap a no-arg callback as a pystray menu handler, which expects (icon, item)."""
+
+        def _handler(_icon=None, _item=None) -> None:
+            callback()
+
+        return _handler
+
     def start(self) -> None:
         image: Image.Image = load_icon(64)
         menu = pystray.Menu(
-            pystray.MenuItem("Open Settings", self._settings, default=True),
+            pystray.MenuItem("Open Settings", self._adapt(self._on_open_settings), default=True),
             pystray.MenuItem(
                 self._update_text,
                 self._update,
                 visible=self._update_visible,
             ),
-            pystray.MenuItem("Copy OBS URL", self._copy),
-            pystray.MenuItem("Copy OBS size", self._copy_size),
-            pystray.MenuItem("Preview Off", self._preview_off),
-            pystray.MenuItem("Open Overlay Preview", self._preview),
+            pystray.MenuItem("Copy OBS URL", self._adapt(self._on_copy_url)),
+            pystray.MenuItem("Copy OBS size", self._adapt(self._on_copy_size)),
+            pystray.MenuItem("Preview Off", self._adapt(self._on_preview_off)),
+            pystray.MenuItem("Open Overlay Preview", self._adapt(self._on_open_overlay)),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
                 lambda item: self._status_provider(),
@@ -63,7 +75,7 @@ class TrayApp:
                 enabled=False,
             ),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Quit Velo", self._quit),
+            pystray.MenuItem("Quit Velo", self._adapt(self._on_quit)),
         )
         self._icon = pystray.Icon("Velo", image, f"Velo {__version__}", menu)
         self._thread = threading.Thread(target=self._icon.run, name="velo-tray", daemon=True)
@@ -73,8 +85,8 @@ class TrayApp:
         if self._icon:
             try:
                 self._icon.stop()
-            except (RuntimeError, OSError, AttributeError):
-                pass
+            except (RuntimeError, OSError, AttributeError) as exc:
+                logger.debug("Could not stop tray icon cleanly: %s", exc)
         self._icon = None
 
     def notify(self, title: str, message: str) -> None:
@@ -82,24 +94,24 @@ class TrayApp:
             return
         try:
             self._icon.notify(message, title)
-        except (RuntimeError, OSError, AttributeError):
-            pass
+        except (RuntimeError, OSError, AttributeError) as exc:
+            logger.debug("Could not show tray notification: %s", exc)
 
     def refresh_menu(self) -> None:
         if not self._icon:
             return
         try:
             self._icon.update_menu()
-        except (RuntimeError, OSError, AttributeError):
-            pass
+        except (RuntimeError, OSError, AttributeError) as exc:
+            logger.debug("Could not refresh tray menu: %s", exc)
 
     def set_tooltip(self, text: str) -> None:
         if not self._icon:
             return
         try:
             self._icon.title = text
-        except (RuntimeError, OSError, AttributeError):
-            pass
+        except (RuntimeError, OSError, AttributeError) as exc:
+            logger.debug("Could not set tray tooltip: %s", exc)
 
     def _update_text(self, _item=None) -> str:
         if self._update_label_provider:
@@ -107,8 +119,8 @@ class TrayApp:
                 label = self._update_label_provider()
                 if label:
                     return label
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Update label provider failed: %s", exc)
         return "Update available..."
 
     def _update_visible(self, _item=None) -> bool:
@@ -124,21 +136,3 @@ class TrayApp:
             self._on_open_update()
         else:
             self._on_open_settings()
-
-    def _settings(self, _icon=None, _item=None) -> None:
-        self._on_open_settings()
-
-    def _copy(self, _icon=None, _item=None) -> None:
-        self._on_copy_url()
-
-    def _copy_size(self, _icon=None, _item=None) -> None:
-        self._on_copy_size()
-
-    def _preview_off(self, _icon=None, _item=None) -> None:
-        self._on_preview_off()
-
-    def _preview(self, _icon=None, _item=None) -> None:
-        self._on_open_overlay()
-
-    def _quit(self, _icon=None, _item=None) -> None:
-        self._on_quit()

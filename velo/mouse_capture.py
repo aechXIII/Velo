@@ -7,7 +7,7 @@ import threading
 import time
 from ctypes import wintypes
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from velo._win32 import (
     ERROR_CLASS_ALREADY_EXISTS,
@@ -47,6 +47,9 @@ from velo._win32 import (
 )
 from velo.constants import MOUSE_MOVE_ABSOLUTE, THREAD_PRIORITY
 from velo.error_handling import safe_thread
+from velo.logging import get_logger
+
+logger = get_logger()
 
 
 @dataclass
@@ -63,6 +66,19 @@ class MouseEvent:
 
 
 Listener = Callable[[MouseEvent], None]
+
+_BUTTON_FLAG_MAP = [
+    (RI_MOUSE_LEFT_BUTTON_DOWN, "left", True, "left_down"),
+    (RI_MOUSE_LEFT_BUTTON_UP, "left", False, "left_up"),
+    (RI_MOUSE_RIGHT_BUTTON_DOWN, "right", True, "right_down"),
+    (RI_MOUSE_RIGHT_BUTTON_UP, "right", False, "right_up"),
+    (RI_MOUSE_MIDDLE_BUTTON_DOWN, "middle", True, "middle_down"),
+    (RI_MOUSE_MIDDLE_BUTTON_UP, "middle", False, "middle_up"),
+    (RI_MOUSE_BUTTON_4_DOWN, "x1", True, "x1_down"),
+    (RI_MOUSE_BUTTON_4_UP, "x1", False, "x1_up"),
+    (RI_MOUSE_BUTTON_5_DOWN, "x2", True, "x2_down"),
+    (RI_MOUSE_BUTTON_5_UP, "x2", False, "x2_up"),
+]
 
 
 class MouseCapture:
@@ -174,6 +190,35 @@ class MouseCapture:
             dy = -dy
         return dx, dy
 
+    def _update_button_state(self, btn_flags: int) -> Optional[str]:
+        button_event = None
+        for mask, name, pressed, ev_name in _BUTTON_FLAG_MAP:
+            if btn_flags & mask:
+                self._buttons[name] = pressed
+                button_event = ev_name
+        return button_event
+
+    @staticmethod
+    def _wheel_delta(btn_flags: int, btn_data: int) -> float:
+        if btn_flags & RI_MOUSE_WHEEL:
+            return ctypes.c_short(btn_data).value / 120.0
+        return 0.0
+
+    def _emit_raw_move(
+        self, now: float, dx: float, dy: float, wheel: float, button_event: Optional[str]
+    ) -> None:
+        self._emit(
+            MouseEvent(
+                t=now,
+                dx=dx,
+                dy=dy,
+                buttons=dict(self._buttons),
+                wheel=wheel,
+                button_event=button_event,
+                source="raw",
+            )
+        )
+
     def _handle_raw_mouse(self, mouse: RAWMOUSE) -> None:
         self._raw_count += 1
         now = time.perf_counter()
@@ -181,27 +226,8 @@ class MouseCapture:
         btn_flags = mouse.buttons.named.usButtonFlags
         btn_data = mouse.buttons.named.usButtonData
 
-        button_event = None
-        mapping = [
-            (RI_MOUSE_LEFT_BUTTON_DOWN, "left", True, "left_down"),
-            (RI_MOUSE_LEFT_BUTTON_UP, "left", False, "left_up"),
-            (RI_MOUSE_RIGHT_BUTTON_DOWN, "right", True, "right_down"),
-            (RI_MOUSE_RIGHT_BUTTON_UP, "right", False, "right_up"),
-            (RI_MOUSE_MIDDLE_BUTTON_DOWN, "middle", True, "middle_down"),
-            (RI_MOUSE_MIDDLE_BUTTON_UP, "middle", False, "middle_up"),
-            (RI_MOUSE_BUTTON_4_DOWN, "x1", True, "x1_down"),
-            (RI_MOUSE_BUTTON_4_UP, "x1", False, "x1_up"),
-            (RI_MOUSE_BUTTON_5_DOWN, "x2", True, "x2_down"),
-            (RI_MOUSE_BUTTON_5_UP, "x2", False, "x2_up"),
-        ]
-        for mask, name, pressed, ev_name in mapping:
-            if btn_flags & mask:
-                self._buttons[name] = pressed
-                button_event = ev_name
-
-        wheel = 0.0
-        if btn_flags & RI_MOUSE_WHEEL:
-            wheel = ctypes.c_short(btn_data).value / 120.0
+        button_event = self._update_button_state(btn_flags)
+        wheel = self._wheel_delta(btn_flags, btn_data)
 
         dx = float(mouse.lLastX)
         dy = float(mouse.lLastY)
@@ -212,29 +238,9 @@ class MouseCapture:
 
         if mode == "relative" and is_relative and (dx != 0.0 or dy != 0.0):
             tdx, tdy = self._apply_transform(dx, dy)
-            self._emit(
-                MouseEvent(
-                    t=now,
-                    dx=tdx,
-                    dy=tdy,
-                    buttons=dict(self._buttons),
-                    wheel=wheel,
-                    button_event=button_event,
-                    source="raw",
-                )
-            )
+            self._emit_raw_move(now, tdx, tdy, wheel, button_event)
         elif button_event or wheel:
-            self._emit(
-                MouseEvent(
-                    t=now,
-                    dx=0.0,
-                    dy=0.0,
-                    buttons=dict(self._buttons),
-                    wheel=wheel,
-                    button_event=button_event,
-                    source="raw",
-                )
-            )
+            self._emit_raw_move(now, 0.0, 0.0, wheel, button_event)
 
     def _wnd_proc(self, hwnd, msg, wparam, lparam):
         if msg == WM_INPUT:
@@ -279,13 +285,7 @@ class MouseCapture:
             return
         self._handle_raw_mouse(raw.data.mouse)
 
-    @safe_thread("capture")
-    def _raw_message_loop(self) -> None:
-        try:
-            kernel32.SetThreadPriority(kernel32.GetCurrentThread(), THREAD_PRIORITY)
-        except Exception:
-            pass
-
+    def _create_raw_input_window(self) -> Optional[Any]:
         class_name = "VeloRawInputSink_v1"
         hinstance = kernel32.GetModuleHandleW(None)
         self._wndproc = WNDPROC(self._wnd_proc)
@@ -307,7 +307,7 @@ class MouseCapture:
             err = ctypes.get_last_error()
             if err != ERROR_CLASS_ALREADY_EXISTS:
                 self._last_error = f"RegisterClassW failed ({err})"
-                return
+                return None
 
         hwnd = user32.CreateWindowExW(
             WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
@@ -325,26 +325,23 @@ class MouseCapture:
         )
         if not hwnd:
             self._last_error = f"CreateWindowExW failed ({ctypes.get_last_error()})"
-            return
+            return None
+        return hwnd
 
-        self._hwnd = int(hwnd) if hwnd else None
-
+    def _register_raw_input(self, hwnd: Any) -> bool:
         rid = RAWINPUTDEVICE()
         rid.usUsagePage = 0x01
         rid.usUsage = 0x02
         rid.dwFlags = RIDEV_INPUTSINK
         rid.hwndTarget = hwnd
-
         if not user32.RegisterRawInputDevices(
             ctypes.byref(rid), 1, ctypes.sizeof(RAWINPUTDEVICE)
         ):
-            self._last_error = (
-                f"RegisterRawInputDevices failed ({ctypes.get_last_error()})"
-            )
-            user32.DestroyWindow(hwnd)
-            self._hwnd = None
-            return
+            self._last_error = f"RegisterRawInputDevices failed ({ctypes.get_last_error()})"
+            return False
+        return True
 
+    def _pump_raw_messages(self) -> None:
         msg = MSG()
         while not self._stop.is_set():
             processed = False
@@ -358,11 +355,30 @@ class MouseCapture:
             if not processed:
                 time.sleep(0.0005)
 
+    @safe_thread("capture")
+    def _raw_message_loop(self) -> None:
+        try:
+            kernel32.SetThreadPriority(kernel32.GetCurrentThread(), THREAD_PRIORITY)
+        except Exception as exc:
+            logger.debug("Could not raise capture thread priority: %s", exc)
+
+        hwnd = self._create_raw_input_window()
+        if not hwnd:
+            return
+        self._hwnd = int(hwnd) if hwnd else None
+
+        if not self._register_raw_input(hwnd):
+            user32.DestroyWindow(hwnd)
+            self._hwnd = None
+            return
+
+        self._pump_raw_messages()
+
         if self._hwnd:
             try:
                 user32.DestroyWindow(wintypes.HWND(self._hwnd))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Could not destroy raw input window: %s", exc)
             self._hwnd = None
 
     def _absolute_poll_loop(self) -> None:

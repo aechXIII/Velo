@@ -12,6 +12,9 @@ from ctypes import wintypes
 from typing import Callable, Dict, Optional, Tuple
 
 from velo.constants import HC_ACTION, HOTKEY_DEBOUNCE, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN
+from velo.logging import get_logger
+
+logger = get_logger()
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -136,34 +139,59 @@ kernel32.GetModuleHandleW.restype = wintypes.HMODULE
 WM_QUIT = 0x0012
 
 
-def parse_hotkey(spec: str) -> Optional[Tuple[int, int, str]]:
-    raw = " ".join(str(spec or "").strip().split())
-    if not raw:
-        return None
-    parts = [p.strip() for p in raw.replace("-", "+").split("+") if p.strip()]
-    if not parts:
-        return None
+_MOD_ALIASES = {
+    "CTRL": MOD_CONTROL,
+    "CONTROL": MOD_CONTROL,
+    "CTL": MOD_CONTROL,
+    "SHIFT": MOD_SHIFT,
+    "SHFT": MOD_SHIFT,
+    "ALT": MOD_ALT,
+    "MENU": MOD_ALT,
+    "WIN": MOD_WIN,
+    "WINDOWS": MOD_WIN,
+    "META": MOD_WIN,
+    "SUPER": MOD_WIN,
+}
+
+_PRETTY_KEY_NAMES = {
+    "ESCAPE": "Esc",
+    "ESC": "Esc",
+    "RETURN": "Enter",
+    "ENTER": "Enter",
+    "PAGEUP": "PageUp",
+    "PAGEDOWN": "PageDown",
+    "BACKSPACE": "Backspace",
+    "DELETE": "Delete",
+    "INSERT": "Insert",
+    "SPACE": "Space",
+    "PLUS": "Plus",
+    "MINUS": "Minus",
+    "OEM_PLUS": "Plus",
+    "OEM_MINUS": "Minus",
+    "UP": "Up",
+    "DOWN": "Down",
+    "LEFT": "Left",
+    "RIGHT": "Right",
+    "TAB": "Tab",
+    "HOME": "Home",
+    "END": "End",
+}
+
+
+def _split_hotkey_mods_and_key(parts: list[str]) -> Tuple[int, Optional[str]]:
     mods = 0
     key = None
     for part in parts:
         u = part.upper()
-        if u in ("CTRL", "CONTROL", "CTL"):
-            mods |= MOD_CONTROL
-        elif u in ("SHIFT", "SHFT"):
-            mods |= MOD_SHIFT
-        elif u in ("ALT", "MENU"):
-            mods |= MOD_ALT
-        elif u in ("WIN", "WINDOWS", "META", "SUPER"):
-            mods |= MOD_WIN
+        mod = _MOD_ALIASES.get(u)
+        if mod is not None:
+            mods |= mod
         else:
             key = u
-    if not key:
-        return None
-    vk = VK_NAMES.get(key)
-    if vk is None and len(key) == 1:
-        vk = VK_NAMES.get(key.upper())
-    if vk is None:
-        return None
+    return mods, key
+
+
+def _hotkey_label(mods: int, key: str) -> str:
     label_parts = []
     if mods & MOD_CONTROL:
         label_parts.append("Ctrl")
@@ -179,32 +207,27 @@ def parse_hotkey(spec: str) -> Optional[Tuple[int, int, str]]:
         label_parts.append(key.upper())
     else:
         label_parts.append(key)
-    pretty = {
-        "ESCAPE": "Esc",
-        "ESC": "Esc",
-        "RETURN": "Enter",
-        "ENTER": "Enter",
-        "PAGEUP": "PageUp",
-        "PAGEDOWN": "PageDown",
-        "BACKSPACE": "Backspace",
-        "DELETE": "Delete",
-        "INSERT": "Insert",
-        "SPACE": "Space",
-        "PLUS": "Plus",
-        "MINUS": "Minus",
-        "OEM_PLUS": "Plus",
-        "OEM_MINUS": "Minus",
-        "UP": "Up",
-        "DOWN": "Down",
-        "LEFT": "Left",
-        "RIGHT": "Right",
-        "TAB": "Tab",
-        "HOME": "Home",
-        "END": "End",
-    }
-    if key in pretty:
-        label_parts[-1] = pretty[key]
-    return mods, int(vk), "+".join(label_parts)
+    if key in _PRETTY_KEY_NAMES:
+        label_parts[-1] = _PRETTY_KEY_NAMES[key]
+    return "+".join(label_parts)
+
+
+def parse_hotkey(spec: str) -> Optional[Tuple[int, int, str]]:
+    raw = " ".join(str(spec or "").strip().split())
+    if not raw:
+        return None
+    parts = [p.strip() for p in raw.replace("-", "+").split("+") if p.strip()]
+    if not parts:
+        return None
+    mods, key = _split_hotkey_mods_and_key(parts)
+    if not key:
+        return None
+    vk = VK_NAMES.get(key)
+    if vk is None and len(key) == 1:
+        vk = VK_NAMES.get(key.upper())
+    if vk is None:
+        return None
+    return mods, int(vk), _hotkey_label(mods, key)
 
 
 def _down(vk: int) -> bool:
@@ -241,6 +264,9 @@ class GlobalHotkeys:
         return bound and bool(self._thread and self._thread.is_alive())
 
     def start(self) -> None:
+        # No-op: the OS hook is installed lazily by _ensure_hook() once a
+        # hotkey is actually bound. This exists only so callers can treat
+        # GlobalHotkeys like other start/stop-managed services.
         return
 
     def stop(self) -> None:
@@ -285,6 +311,42 @@ class GlobalHotkeys:
         if self._last_error:
             return None
         return label
+
+    def replace_bindings(
+        self,
+        single_spec: str,
+        single_callback: Callable[[], None],
+        bindings: list[tuple[str, Callable[[], None]]],
+    ) -> tuple[Optional[str], int]:
+        """Atomically replace all bindings without cycling the OS hook unnecessarily."""
+        single = parse_hotkey(single_spec)
+        parsed_bindings: Dict[str, Tuple[int, int, str, Callable[[], None]]] = {}
+        for spec, callback in bindings:
+            parsed = parse_hotkey(spec)
+            if not parsed:
+                continue
+            mods, vk, label = parsed
+            parsed_bindings[label.casefold()] = (mods, vk, label, callback)
+
+        with self._lock:
+            if single:
+                self._mods, self._vk, self._label = single
+                self._callback = single_callback
+            else:
+                self._mods = 0
+                self._vk = 0
+                self._label = ""
+                self._callback = None
+            self._bindings = parsed_bindings
+            active = bool(self._callback and self._vk) or bool(self._bindings)
+
+        self._last_error = None
+        if active:
+            self._ensure_hook()
+        else:
+            self._teardown_hook()
+        label = single[2] if single else None
+        return label, len(parsed_bindings)
 
     def remove_binding(self, spec: str) -> None:
         with self._lock:
@@ -366,14 +428,22 @@ class GlobalHotkeys:
             single_vk = self._vk
         for _spec, (mods, vk, _label, cb) in bindings.items():
             if int(vk_code) == vk and self._mods_match(mods):
-                cb()
+                self._dispatch(cb)
                 return
         if single_cb and single_vk and int(vk_code) == single_vk:
-            single_cb()
+            self._dispatch(single_cb)
 
-    def _loop(self) -> None:
-        self._thread_id = kernel32.GetCurrentThreadId()
+    @staticmethod
+    def _dispatch(callback: Callable[[], None]) -> None:
+        def _run() -> None:
+            try:
+                callback()
+            except Exception as exc:
+                logger.debug("Hotkey callback failed: %s", exc)
 
+        threading.Thread(target=_run, name="velo-hotkey-action", daemon=True).start()
+
+    def _make_hook_proc(self) -> LowLevelKeyboardProc:
         @LowLevelKeyboardProc
         def _proc(nCode, wParam, lParam):
             # Keep the hook callback minimal; never raise into the OS chain
@@ -382,19 +452,13 @@ class GlobalHotkeys:
                     kb = ctypes.cast(lParam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
                     if (kb.flags & LLKHF_UP) == 0:
                         self._on_key(kb.vkCode)
-                except (ValueError, OSError, ctypes.ArgumentError):
-                    pass
+                except (ValueError, OSError, ctypes.ArgumentError) as exc:
+                    logger.debug("Keyboard hook callback error: %s", exc)
             return user32.CallNextHookEx(self._hook, nCode, wParam, lParam)
 
-        self._proc = _proc
-        hmod = kernel32.GetModuleHandleW(None)
-        self._hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._proc, hmod, 0)
-        if not self._hook:
-            self._last_error = f"SetWindowsHookEx failed ({ctypes.get_last_error()})"
-            self._ready.set()
-            return
+        return _proc
 
-        self._ready.set()
+    def _pump_messages(self) -> None:
         msg = MSG()
         while not self._stop.is_set():
             got = user32.GetMessageW(ctypes.byref(msg), None, 0, 0)
@@ -404,6 +468,19 @@ class GlobalHotkeys:
                 break
             user32.TranslateMessage(ctypes.byref(msg))
             user32.DispatchMessageW(ctypes.byref(msg))
+
+    def _loop(self) -> None:
+        self._thread_id = kernel32.GetCurrentThreadId()
+        self._proc = self._make_hook_proc()
+        hmod = kernel32.GetModuleHandleW(None)
+        self._hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._proc, hmod, 0)
+        if not self._hook:
+            self._last_error = f"SetWindowsHookEx failed ({ctypes.get_last_error()})"
+            self._ready.set()
+            return
+
+        self._ready.set()
+        self._pump_messages()
 
         if self._hook:
             user32.UnhookWindowsHookEx(self._hook)

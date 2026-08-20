@@ -8,6 +8,10 @@ import urllib.request
 from ctypes import wintypes
 from typing import Any, Optional
 
+from velo.logging import get_logger
+
+logger = get_logger()
+
 _MUTEX_NAME = "Local\\VeloSingleInstance"
 _ERROR_ALREADY_EXISTS = 183
 
@@ -66,7 +70,7 @@ def request_show_settings(config: Any, *, attempts: int = 12, delay_s: float = 0
             with urllib.request.urlopen(req, timeout=0.8) as resp:
                 if 200 <= getattr(resp, "status", 200) < 300:
                     return True
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError, ValueError):
-            pass
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError, ValueError) as exc:
+            logger.debug("Could not reach running instance yet: %s", exc)
         time.sleep(delay_s)
     return False

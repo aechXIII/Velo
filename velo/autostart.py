@@ -39,7 +39,7 @@ def set_enabled(enabled: bool) -> Optional[str]:
                 try:
                     winreg.DeleteValue(key, VALUE_NAME)
                 except FileNotFoundError:
-                    pass
+                    pass  # already disabled: nothing to delete
         return None
     except OSError as exc:
         return str(exc)

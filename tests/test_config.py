@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import base64
 import json
+
+import pytest
 
 from velo.config import ConfigStore, config_dir, config_path, presets_dir
 
@@ -67,6 +70,46 @@ def test_config_store_export_import_bundle(tmp_path):
     assert store2.get("sensitivity") == 2.5
 
 
+def test_config_store_export_is_safe_by_default(tmp_path):
+    store = ConfigStore(path=tmp_path / "config.json", presets_path=tmp_path / "presets")
+    store.update({"host": "0.0.0.0", "port": 30000, "auth_token": "private-token"})
+    exported = store.export_bundle()["config"]
+    assert "host" not in exported
+    assert "port" not in exported
+    assert "auth_token" not in exported
+
+
+def test_malformed_config_is_quarantined_and_backup_is_restored(tmp_path):
+    path = tmp_path / "config.json"
+    backup_dir = tmp_path / "backups"
+    backup_dir.mkdir()
+    path.write_text("{not valid json", encoding="utf-8")
+    (backup_dir / "config_20260819_120000.json").write_text(
+        json.dumps({"sensitivity": 3.5}), encoding="utf-8"
+    )
+
+    store = ConfigStore(path=path, presets_path=tmp_path / "presets")
+
+    assert store.get("sensitivity") == 3.5
+    assert store.recovery_notice and "Recovered settings" in store.recovery_notice
+    quarantined = list((tmp_path / "recovery").glob("config.invalid-*.json"))
+    assert len(quarantined) == 1
+    assert quarantined[0].read_text(encoding="utf-8") == "{not valid json"
+    assert json.loads(path.read_text(encoding="utf-8"))["sensitivity"] == 3.5
+
+
+def test_malformed_config_without_backup_resets_safely(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text("[]", encoding="utf-8")
+
+    store = ConfigStore(path=path, presets_path=tmp_path / "presets")
+
+    assert store.get("sensitivity") == 1.0
+    assert store.get("auth_token")
+    assert store.recovery_notice and "Reset settings" in store.recovery_notice
+    assert list((tmp_path / "recovery").glob("config.invalid-*.json"))
+
+
 def test_config_store_preset_save_load_delete(tmp_path):
     presets = tmp_path / "presets"
     store = ConfigStore(path=tmp_path / "config.json", presets_path=presets)
@@ -117,6 +160,67 @@ def test_config_store_on_change_callback(tmp_path):
     store.update({"sensitivity": 4.0}, persist=True)
     assert len(calls) >= 1
     assert calls[-1]["sensitivity"] == 4.0
+
+
+def test_invalid_patch_is_rejected_without_mutating_state(tmp_path):
+    store = ConfigStore(path=tmp_path / "config.json", presets_path=tmp_path / "presets")
+    before = store.snapshot()
+    with pytest.raises(ValueError):
+        store.update({"port": "oops"})
+    assert store.snapshot() == before
+
+
+def test_invalid_values_on_disk_fall_back_to_defaults(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"port": "oops", "sensitivity": 2.0}), encoding="utf-8")
+    store = ConfigStore(path=path, presets_path=tmp_path / "presets")
+    assert store.get("port") == 27180
+    assert store.get("sensitivity") == 2.0
+    assert json.loads(path.read_text(encoding="utf-8"))["port"] == 27180
+
+
+def test_invalid_bundle_is_rejected(tmp_path):
+    store = ConfigStore(path=tmp_path / "config.json", presets_path=tmp_path / "presets")
+    with pytest.raises(ValueError):
+        store.import_bundle({"config": {"preset_hotkeys": "not-a-list"}})
+
+
+def test_background_data_url_is_externalized(tmp_path):
+    # Valid 1x1 PNG.
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
+    data_url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"pad_bg_image": data_url}), encoding="utf-8")
+    store = ConfigStore(path=path, presets_path=tmp_path / "presets")
+    value = store.get("pad_bg_image")
+    assert value.startswith("/user-assets/background-")
+    assert list((tmp_path / "assets").glob("background-*.png"))
+    assert "data:image" not in path.read_text(encoding="utf-8")
+
+
+def test_reset_visuals_preserves_preset_hotkeys(tmp_path):
+    store = ConfigStore(path=tmp_path / "config.json", presets_path=tmp_path / "presets")
+    hotkeys = [{"key": "Ctrl+1", "target": "16:9 pad"}]
+    store.update({"preset_hotkeys": hotkeys})
+    store.reset_visuals()
+    assert store.get("preset_hotkeys") == hotkeys
+
+
+def test_preset_files_do_not_capture_global_hotkeys(tmp_path):
+    store = ConfigStore(path=tmp_path / "config.json", presets_path=tmp_path / "presets")
+    store.update({"preset_hotkeys": [{"key": "Ctrl+1", "target": "16:9 pad"}]})
+    store.save_user_preset("No global state")
+    payload = json.loads(next((tmp_path / "presets").glob("*.json")).read_text(encoding="utf-8"))
+    assert "preset_hotkeys" not in payload["settings"]
+
+
+def test_custom_config_backups_stay_with_custom_path(tmp_path):
+    path = tmp_path / "config.json"
+    store = ConfigStore(path=path, presets_path=tmp_path / "presets")
+    store.update({"sensitivity": 2.0})
+    assert (tmp_path / "backups").is_dir()
 
 
 def test_config_dir_returns_path():

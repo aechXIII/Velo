@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import time
 
 from velo.constants import (
     IDLE_DECAY_FACTOR,
@@ -86,3 +85,21 @@ def test_reset_stats(tmp_path):
     assert stats["distance"] == 0.0
     assert stats["cps"] == 0.0
     assert stats["clicks"] == 0
+
+
+def test_capture_configuration_applies_sensitivity(tmp_path):
+    from velo.config import ConfigStore
+
+    class Capture:
+        def configure(self, **kwargs):
+            self.options = kwargs
+
+    class Server:
+        client_count = 0
+
+    config = ConfigStore(path=tmp_path / "config.json", presets_path=tmp_path / "presets")
+    config.update({"sensitivity": 2.5}, persist=False)
+    capture = Capture()
+    pipeline = EventPipeline(config, capture, Server())
+    pipeline._apply_capture_config()
+    assert capture.options["sensitivity"] == 2.5

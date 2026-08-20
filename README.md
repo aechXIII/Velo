@@ -78,7 +78,8 @@ Mouse Input overlay for OBS. Made for aim trainers and FPS games.
 - System tray with quick actions
 - In-app update checker with one-click install
 - Autostart with Windows, start minimized
-- Single instance- launching again opens the settings window
+- Single instance—launching again opens the settings window
+- Privacy-safe diagnostics and rotating local logs for support
 
 ---
 
@@ -90,7 +91,9 @@ Mouse Input overlay for OBS. Made for aim trainers and FPS games.
 
 Config and presets live in `%APPDATA%\Velo` and survive updates.
 
-Requires Windows 10 or 11 (64-bit) and [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (already included on Windows 11).
+Requires Windows 10 or 11 (64-bit). The installer checks for [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) and installs Microsoft's Evergreen Runtime when it is missing. Portable users get a clear download link if the runtime is unavailable.
+
+The standard installer and portable ZIP use Velo's verified GitHub updater. Builds installed through the itch.io app use itch for updates; Velo disables its own updater and Windows autostart in that edition so itch can remove the app cleanly.
 
 ---
 
@@ -115,6 +118,17 @@ Set the settings preview to Off or Lite while streaming or recording if you want
 |---|---|
 | Config | `%APPDATA%\Velo\config.json` |
 | Presets | `%APPDATA%\Velo\presets\` |
+| Managed images | `%APPDATA%\Velo\assets\` |
+| Backups | `%APPDATA%\Velo\backups\` |
+| Logs | `%APPDATA%\Velo\logs\` |
+
+Malformed configs are preserved under `%APPDATA%\Velo\recovery\` before Velo restores the newest valid backup or safe defaults.
+
+## Privacy and support
+
+Velo contains no analytics, telemetry, ads, or automatic crash reporting. It runs a local server for OBS and checks GitHub for updates in standard builds. See [PRIVACY.md](PRIVACY.md) for the complete network and data-storage behavior.
+
+Settings → About & Support can copy a privacy-safe diagnostic summary, open the local log/config folders, or open a bug report. Safe settings exports omit the server host, port, and authentication token; choose **Full backup** only for private recovery.
 
 ---
 
@@ -128,9 +142,12 @@ Set the settings preview to Off or Lite while streaming or recording if you want
 ```powershell
 .\scripts\build.ps1 -Clean
 .\scripts\build.ps1 -Clean -Installer
+.\scripts\build.ps1 -Clean -Itch
 ```
 
-The installer build needs [Inno Setup 6](https://jrsoftware.org/isdl.php). Output goes to `dist\Velo\` and `installer\Output\Velo-Setup-*.exe`.
+The installer build needs [Inno Setup 6](https://jrsoftware.org/isdl.php). Output goes to `dist\Velo\`, `dist\Velo-itch\`, and `installer\Output\Velo-Setup-*.exe` as applicable. Release builds use the fully pinned `requirements-lock.txt`, embed Windows version metadata, collect dependency license files, run a frozen self-test, and can Authenticode-sign artifacts when `VELO_SIGN_PFX` and `VELO_SIGN_PASSWORD` are set.
+
+Before tagging, run `scripts\verify-release.ps1 -Version X.Y.Z` and complete the manual release checks. Set the repository variable `ITCH_TARGET` to `username/project` and the environment secret `BUTLER_API_KEY` to enable the protected `itch-production` deployment job.
 
 ---
 
@@ -140,4 +157,4 @@ Inspired by [input-overlay](https://github.com/girlglock/input-overlay).
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

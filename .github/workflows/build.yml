@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: windows-latest
@@ -18,17 +21,27 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
+          cache: pip
+          cache-dependency-path: |
+            requirements-lock.txt
+            requirements-dev.txt
 
       - name: Install dependencies
         run: |
           python -m venv .venv
           .venv\Scripts\python.exe -m pip install --upgrade pip
-          .venv\Scripts\python.exe -m pip install -r requirements.txt
-          .venv\Scripts\python.exe -m pip install pytest pytest-asyncio
+          .venv\Scripts\python.exe -m pip install -r requirements-lock.txt -r requirements-dev.txt
+
+      - name: Verify source and release metadata
+        shell: pwsh
+        run: |
+          .\scripts\verify-release.ps1
+          .venv\Scripts\python.exe -m ruff check velo tests --select E9,F63,F7,F82
+          node --check config_ui/app.js
+          node --check overlay/app.js
 
       - name: Run tests
-        run: |
-          .venv\Scripts\python.exe -m pytest tests/ -v --tb=short
+        run: .venv\Scripts\python.exe -m pytest tests/ -q --tb=short
 
   build:
     needs: test
@@ -42,16 +55,28 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
+          cache: pip
+          cache-dependency-path: |
+            requirements-lock.txt
+            requirements-dev.txt
 
       - name: Install dependencies
         run: |
           python -m venv .venv
           .venv\Scripts\python.exe -m pip install --upgrade pip
-          .venv\Scripts\python.exe -m pip install -r requirements.txt
-          .venv\Scripts\python.exe -m pip install pyinstaller
+          .venv\Scripts\python.exe -m pip install -r requirements-lock.txt -r requirements-dev.txt
 
-      - name: Build EXE
+      - name: Build and self-test EXE
         run: .\scripts\build.ps1 -Clean
+
+      - name: Verify executable metadata
+        shell: pwsh
+        run: |
+          $expectedVersion = (& .venv\Scripts\python.exe -c "from velo import __version__; print(__version__)").Trim()
+          $info = (Get-Item -LiteralPath "dist\Velo\Velo.exe").VersionInfo
+          if ($info.ProductVersion -notlike "$expectedVersion*") {
+            throw "Unexpected product version: $($info.ProductVersion); expected $expectedVersion"
+          }
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

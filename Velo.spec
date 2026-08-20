@@ -50,6 +50,7 @@ exe = EXE(
     console=False,
     disable_windowed_traceback=False,
     icon="assets/velo.ico",
+    version="build/version_info.txt",
 )
 
 coll = COLLECT(

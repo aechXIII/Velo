@@ -1,0 +1,48 @@
+name: Bug report
+description: Report a reproducible problem with Velo
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Velo. Please do not post authentication tokens, OBS URLs, or full private backups. Settings → About & Support → Copy diagnostics creates a safe summary.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the result and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open…
+        2. Change…
+        3. See…
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Paste the output from Settings → About & Support → Copy diagnostics.
+      render: text
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install type
+      options:
+        - Standard installer
+        - Portable ZIP
+        - itch.io app
+        - Running from source
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log excerpt
+      description: Use Open logs and attach only the relevant excerpt after checking it for personal information.

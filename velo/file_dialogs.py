@@ -6,6 +6,10 @@ import os
 import threading
 from typing import Callable, Optional
 
+from velo.logging import get_logger
+
+logger = get_logger()
+
 _dialog_lock = threading.Lock()
 
 
@@ -28,8 +32,8 @@ def _run_tk_dialog(fn: Callable) -> Optional[str]:
         root.update_idletasks()
         try:
             root.attributes("-topmost", True)
-        except TclError:
-            pass
+        except TclError as exc:
+            logger.debug("Could not pin dialog to top: %s", exc)
         path = None
         try:
             root.lift()
@@ -39,8 +43,8 @@ def _run_tk_dialog(fn: Callable) -> Optional[str]:
         finally:
             try:
                 root.destroy()
-            except TclError:
-                pass
+            except TclError as exc:
+                logger.debug("Could not destroy dialog window: %s", exc)
         if not path:
             return None
         path = str(path).strip().strip("\x00")

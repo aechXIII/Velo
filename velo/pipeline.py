@@ -6,7 +6,7 @@ import math
 import queue
 import threading
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from velo.config import ConfigStore
 from velo.constants import (
@@ -92,7 +92,7 @@ class EventPipeline:
         self.capture.configure(
             mode=snap.get("capture_mode", "relative"),
             invert_y=bool(snap.get("invert_y", False)),
-            sensitivity=1.0,
+            sensitivity=float(snap.get("sensitivity") or 1.0),
         )
         hz = float(snap.get("ws_send_hz") or 120)
         fps = float(snap.get("target_fps") or 0)
@@ -144,92 +144,119 @@ class EventPipeline:
                     break
                 self._handle_mouse(ev)
 
-    def _handle_mouse(self, ev: MouseEvent) -> None:
-        now = ev.t
-        dx = float(ev.dx)
-        dy = float(ev.dy)
-        dist = math.hypot(dx, dy)
+    def _update_motion_stats_unlocked(self, dist: float, now: float) -> None:
+        self._stats["distance"] += dist
+        if self._last_t is not None:
+            dt = now - self._last_t
+            if dt > 1e-6:
+                speed = dist / dt
+                prev = self._stats["speed"]
+                self._stats["speed"] = prev * SMOOTHING_WEIGHT_NEW + speed * SMOOTHING_WEIGHT_OLD
+                if speed > self._stats["peak_speed"]:
+                    self._stats["peak_speed"] = speed
+        self._last_t = now
 
+    def _update_click_stats_unlocked(self, now: float) -> None:
+        self._stats["clicks"] += 1
+        self._click_times.append(now)
+        cutoff = now - 1.0
+        self._click_times = [t for t in self._click_times if t >= cutoff]
+        self._stats["cps"] = float(len(self._click_times))
+
+    def _update_stats_for_event(self, ev: MouseEvent, dist: float, now: float) -> None:
         with self._lock:
             if dist > 0.0:
-                self._stats["distance"] += dist
-                if self._last_t is not None:
-                    dt = now - self._last_t
-                    if dt > 1e-6:
-                        speed = dist / dt
-                        prev = self._stats["speed"]
-                        self._stats["speed"] = prev * SMOOTHING_WEIGHT_NEW + speed * SMOOTHING_WEIGHT_OLD
-                        if speed > self._stats["peak_speed"]:
-                            self._stats["peak_speed"] = speed
-                self._last_t = now
+                self._update_motion_stats_unlocked(dist, now)
             elif ev.x is not None:
                 self._last_t = now
-
             if ev.button_event and ev.button_event.endswith("_down"):
-                self._stats["clicks"] += 1
-                self._click_times.append(now)
-                cutoff = now - 1.0
-                self._click_times = [t for t in self._click_times if t >= cutoff]
-                self._stats["cps"] = float(len(self._click_times))
+                self._update_click_stats_unlocked(now)
 
-        if ev.button_event or ev.wheel:
-            with self._lock:
-                self._acc_dx += dx
-                self._acc_dy += dy
-                self._acc_t = now
-                self._acc_src = ev.source
-                self._acc_buttons = ev.buttons
-                self._has_pending_move = True
-            self._flush_pending_move(force=True)
-            payload: Dict[str, Any] = {
-                "type": "mouse",
-                "t": now,
-                "dx": 0.0,
-                "dy": 0.0,
-                "btn": ev.button_event,
-                "wheel": ev.wheel,
-                "buttons": ev.buttons,
-                "src": ev.source,
-            }
-            if ev.x is not None and ev.y is not None:
-                payload["x"] = ev.x
-                payload["y"] = ev.y
-            self.server.broadcast_mouse(payload)
-            return
-
-        if dist == 0 and ev.x is None:
-            return
-
+    def _emit_button_or_wheel_event(
+        self, ev: MouseEvent, now: float, dx: float, dy: float
+    ) -> None:
         with self._lock:
             self._acc_dx += dx
             self._acc_dy += dy
             self._acc_t = now
             self._acc_src = ev.source
             self._acc_buttons = ev.buttons
-            if ev.x is not None and ev.y is not None:
-                self._acc_x = ev.x
-                self._acc_y = ev.y
             self._has_pending_move = True
+        self._flush_pending_move(force=True)
+        payload: Dict[str, Any] = {
+            "type": "mouse",
+            "t": now,
+            "dx": 0.0,
+            "dy": 0.0,
+            "btn": ev.button_event,
+            "wheel": ev.wheel,
+            "buttons": ev.buttons,
+            "src": ev.source,
+        }
+        if ev.x is not None and ev.y is not None:
+            payload["x"] = ev.x
+            payload["y"] = ev.y
+        self.server.broadcast_mouse(payload)
+
+    def _accumulate_move_unlocked(self, ev: MouseEvent, now: float, dx: float, dy: float) -> None:
+        self._acc_dx += dx
+        self._acc_dy += dy
+        self._acc_t = now
+        self._acc_src = ev.source
+        self._acc_buttons = ev.buttons
+        if ev.x is not None and ev.y is not None:
+            self._acc_x = ev.x
+            self._acc_y = ev.y
+        self._has_pending_move = True
+
+    def _handle_mouse(self, ev: MouseEvent) -> None:
+        now = ev.t
+        dx = float(ev.dx)
+        dy = float(ev.dy)
+        dist = math.hypot(dx, dy)
+
+        self._update_stats_for_event(ev, dist, now)
+
+        if ev.button_event or ev.wheel:
+            self._emit_button_or_wheel_event(ev, now, dx, dy)
+            return
+
+        if dist == 0 and ev.x is None:
+            return
+
+        with self._lock:
+            self._accumulate_move_unlocked(ev, now, dx, dy)
+
+    def _take_pending_move_unlocked(
+        self, force: bool
+    ) -> Optional[Tuple[float, float, float, Optional[str], int, Optional[float], Optional[float]]]:
+        if not self._has_pending_move:
+            return None
+        now = time.perf_counter()
+        if not force and (now - self._last_move_emit) < self._min_move_interval:
+            return None
+        dx, dy, t, src, buttons = (
+            self._acc_dx,
+            self._acc_dy,
+            self._acc_t,
+            self._acc_src,
+            self._acc_buttons,
+        )
+        x, y = self._acc_x, self._acc_y
+        self._acc_dx = 0.0
+        self._acc_dy = 0.0
+        self._acc_x = None
+        self._acc_y = None
+        self._has_pending_move = False
+        self._last_move_emit = now
+        return dx, dy, t, src, buttons, x, y
 
     def _flush_pending_move(self, force: bool = False) -> None:
         with self._lock:
-            if not self._has_pending_move:
-                return
-            now = time.perf_counter()
-            if not force and (now - self._last_move_emit) < self._min_move_interval:
-                return
-            dx = self._acc_dx
-            dy = self._acc_dy
-            t = self._acc_t
-            src = self._acc_src
-            buttons = self._acc_buttons
-            x, y = self._acc_x, self._acc_y
-            self._acc_dx = 0.0
-            self._acc_dy = 0.0
-            self._acc_x = None
-            self._acc_y = None
-            self._has_pending_move = False
-            self._last_move_emit = now
+            taken = self._take_pending_move_unlocked(force)
+        if taken is None:
+            return
+        dx, dy, t, src, buttons, x, y = taken
 
         if dx == 0.0 and dy == 0.0 and x is None:
             return

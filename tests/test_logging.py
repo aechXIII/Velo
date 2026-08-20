@@ -14,6 +14,10 @@ def _reset_logger():
     import velo.logging as log_mod
     log_mod._logger = None
     yield
+    logger = logging.getLogger("velo")
+    for handler in logger.handlers:
+        handler.close()
+    logger.handlers.clear()
     log_mod._logger = None
 
 
@@ -62,6 +66,8 @@ def test_logger_with_file_handler(tmp_path):
     log_file = log_dir / "velo.log"
     assert log_file.exists()
 
+    for handler in logger.handlers:
+        handler.close()
     logger.handlers.clear()
 
 
@@ -75,6 +81,21 @@ def test_log_messages_are_formatted(tmp_path):
     content = log_file.read_text(encoding="utf-8")
     assert "test message 42" in content
     assert "INFO" in content
+
+
+def test_log_messages_redact_connection_secrets(tmp_path):
+    log_file = tmp_path / "velo.log"
+    logger = setup_logging(log_dir=str(tmp_path))
+    logger.info(
+        'URL http://127.0.0.1:27180/config?token=secret-token and "auth_token": "other-secret"'
+    )
+    for handler in logger.handlers:
+        handler.flush()
+
+    content = log_file.read_text(encoding="utf-8")
+    assert "secret-token" not in content
+    assert "other-secret" not in content
+    assert content.count("<redacted>") == 2
 
 
 def test_get_logger_without_setup_returns_logger():

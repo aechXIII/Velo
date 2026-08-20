@@ -799,6 +799,7 @@
 
           <section class="block sec" data-section="settings" hidden>
             <h2>Settings</h2>
+            <div class="recovery-notice" id="recovery-notice" role="status" hidden></div>
             <h3 class="subhead">Startup</h3>
             <div class="checks">
               <div class="toggle-row">
@@ -816,6 +817,7 @@
                 </label>
               </div>
             </div>
+            <p class="note" id="autostart-note" hidden></p>
             <h3 class="subhead">Theme</h3>
             <div class="row2">
               <div class="field">
@@ -887,6 +889,26 @@
             <h3 class="subhead">Reset</h3>
             <button type="button" class="btn btn-block btn-ghost" id="btn-reset-visuals">Reset look only</button>
             <button type="button" class="btn btn-block btn-ghost" id="btn-reset">Reset all defaults</button>
+
+            <h3 class="subhead">About &amp; Support</h3>
+            <div class="about-meta">
+              <strong>Velo <span id="about-version">-</span></strong>
+              <span id="about-distribution">-</span>
+            </div>
+            <p class="note support-copy">
+              Velo does not collect analytics or telemetry. It runs a local OBS server. Standard
+              builds contact GitHub only for update checks; itch.io manages its own builds.
+            </p>
+            <p class="note">License: MIT. Third-party notices are included with every build.</p>
+            <div class="support-actions">
+              <button type="button" class="btn btn-ghost" id="btn-copy-diagnostics">Copy diagnostics</button>
+              <button type="button" class="btn btn-ghost" id="btn-open-logs">Open logs</button>
+              <button type="button" class="btn btn-ghost" id="btn-open-config">Open config folder</button>
+              <button type="button" class="btn btn-ghost" id="btn-report-problem">Report a problem</button>
+              <button type="button" class="btn btn-ghost" id="btn-project-page">GitHub project</button>
+              <button type="button" class="btn btn-ghost" id="btn-third-party">Third-party notices</button>
+            </div>
+            <p class="note">Diagnostics exclude authentication tokens, OBS URLs, and personal files.</p>
           </section>
         </div>
         

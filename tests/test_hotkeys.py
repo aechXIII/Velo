@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
+import threading
 
-from velo.hotkeys import parse_hotkey
+from velo.hotkeys import GlobalHotkeys, parse_hotkey
 
 
 def test_parse_hotkey_simple_key():
@@ -102,3 +102,31 @@ def test_parse_hotkey_function_keys():
 
 def test_parse_hotkey_none_input():
     assert parse_hotkey(None) is None  # type: ignore[arg-type]
+
+
+def test_replace_bindings_removes_stale_entries(monkeypatch):
+    hotkeys = GlobalHotkeys()
+    monkeypatch.setattr(hotkeys, "_ensure_hook", lambda: None)
+    monkeypatch.setattr(hotkeys, "_teardown_hook", lambda: None)
+    callback = lambda: None
+    hotkeys.replace_bindings("", callback, [("Ctrl+1", callback), ("Ctrl+2", callback)])
+    assert len(hotkeys._bindings) == 2
+    hotkeys.replace_bindings("", callback, [("Ctrl+2", callback)])
+    assert len(hotkeys._bindings) == 1
+    assert next(iter(hotkeys._bindings.values()))[2] == "Ctrl+2"
+    hotkeys.replace_bindings("", callback, [])
+    assert hotkeys._bindings == {}
+
+
+def test_hotkey_callback_is_dispatched_off_hook_thread():
+    completed = threading.Event()
+    caller = threading.get_ident()
+    callback_thread = []
+
+    def callback():
+        callback_thread.append(threading.get_ident())
+        completed.set()
+
+    GlobalHotkeys._dispatch(callback)
+    assert completed.wait(1)
+    assert callback_thread != [caller]

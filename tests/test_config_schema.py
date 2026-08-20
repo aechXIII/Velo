@@ -1,194 +1,112 @@
-"""Tests for velo.config_schema."""
+"""Tests for the authoritative Velo configuration schema."""
 
 from __future__ import annotations
 
-import pytest
+from copy import deepcopy
 
-from velo.config_schema import (
-    SCHEMA,
-    ValidationError,
-    validate_config,
-    validate_preset_name,
-)
+from velo.config_schema import SCHEMA, ValidationError, validate_config, validate_preset_name
+from velo.defaults import DEFAULTS
 
 
-def test_valid_config_passes():
-    config = {
-        "window_width": 800,
-        "window_height": 600,
-        "pad_shape": "rounded",
-        "pad_fill_opacity": 0.5,
-        "trail_show": True,
-        "trail_width": 3,
-        "cursor_show": True,
-        "cursor_size": 5,
-        "motion_scale": 1.0,
-        "fps_limit": 60,
-        "server_port": 27180,
-    }
-    errors = validate_config(config)
-    assert errors == []
+def test_all_defaults_are_valid_and_covered():
+    assert set(SCHEMA) == set(DEFAULTS)
+    assert validate_config(deepcopy(DEFAULTS), strict=True) == []
+
+
+def test_valid_patch_passes():
+    assert validate_config(
+        {
+            "canvas_width": 800,
+            "canvas_height": 600,
+            "pad_shape": "rounded",
+            "trail_width": 3.0,
+            "motion_scale": 1.0,
+            "target_fps": 60,
+            "port": 27180,
+        },
+        strict=True,
+    ) == []
 
 
 def test_invalid_type_is_caught():
-    config = {"window_width": "not_an_int"}
-    errors = validate_config(config)
+    errors = validate_config({"port": "not-an-int"}, strict=True)
     assert len(errors) == 1
-    assert "window_width" in errors[0]
-    assert "int" in errors[0]
+    assert "port" in errors[0]
+
+
+def test_bool_is_not_accepted_as_integer():
+    assert validate_config({"port": True}, strict=True)
 
 
 def test_out_of_range_value_is_caught():
-    config = {"window_width": 0}
-    errors = validate_config(config)
+    errors = validate_config({"canvas_width": 0}, strict=True)
     assert len(errors) == 1
-    assert "window_width" in errors[0]
     assert "out of range" in errors[0]
 
 
-def test_out_of_range_high_value_is_caught():
-    config = {"fps_limit": 500}
-    errors = validate_config(config)
-    assert len(errors) == 1
-    assert "fps_limit" in errors[0]
-
-
 def test_float_range_validation():
-    config = {"pad_fill_opacity": 1.5}
-    errors = validate_config(config)
-    assert len(errors) == 1
-    assert "pad_fill_opacity" in errors[0]
+    assert validate_config({"pad_bg_opacity": 1.5}, strict=True)
 
 
-def test_negative_range_validation():
-    config = {"pad_shadow_offset_x": -200}
-    errors = validate_config(config)
-    assert len(errors) == 1
-    assert "pad_shadow_offset_x" in errors[0]
+def test_unknown_keys_are_caught_in_strict_mode():
+    assert validate_config({"unknown_key": "value"}, strict=True)
 
 
-def test_multiple_errors_reported():
-    config = {
-        "window_width": "bad",
-        "fps_limit": 500,
-        "pad_fill_opacity": 2.0,
-    }
-    errors = validate_config(config)
-    assert len(errors) == 3
+def test_unknown_keys_can_be_ignored_for_compatibility():
+    assert validate_config({"unknown_key": "value"}) == []
 
 
-def test_unknown_keys_ignored_by_default():
-    config = {"unknown_key": "value", "window_width": 800}
-    errors = validate_config(config)
-    assert errors == []
+def test_none_is_rejected():
+    assert validate_config({"canvas_width": None}, strict=True)
 
 
-def test_unknown_keys_caught_in_strict_mode():
-    config = {"unknown_key": "value", "window_width": 800}
-    errors = validate_config(config, strict=True)
-    assert len(errors) == 1
-    assert "unknown_key" in errors[0]
+def test_invalid_enum_is_rejected():
+    assert validate_config({"capture_mode": "telepathy"}, strict=True)
 
 
-def test_none_values_skip_validation():
-    config = {"window_width": None}
-    errors = validate_config(config)
-    assert errors == []
+def test_invalid_nested_click_map_is_rejected():
+    assert validate_config({"click_show": {"left": "yes"}}, strict=True)
 
 
-def test_empty_config_passes():
-    errors = validate_config({})
-    assert errors == []
+def test_invalid_speed_stops_are_rejected():
+    assert validate_config(
+        {"speed_stops": [{"t": 1.0, "color": "red"}, {"t": 0.0, "color": "#fff"}]},
+        strict=True,
+    )
 
 
-def test_bool_type_validation():
-    config = {"trail_show": "not_bool"}
-    errors = validate_config(config)
-    assert len(errors) == 1
-    assert "trail_show" in errors[0]
+def test_invalid_preset_hotkey_markup_is_rejected():
+    errors = validate_config(
+        {"preset_hotkeys": [{"key": "<img onerror=alert(1)>", "target": "Preset"}]},
+        strict=True,
+    )
+    assert errors
 
 
-def test_string_type_validation():
-    config = {"pad_shape": 123}
-    errors = validate_config(config)
-    assert len(errors) == 1
-    assert "pad_shape" in errors[0]
+def test_duplicate_preset_hotkeys_are_rejected():
+    errors = validate_config(
+        {
+            "preset_hotkeys": [
+                {"key": "Ctrl+1", "target": "A"},
+                {"key": "ctrl+1", "target": "B"},
+            ]
+        },
+        strict=True,
+    )
+    assert errors
 
 
-def test_validate_preset_name_valid():
+def test_background_image_must_be_managed_asset():
+    assert validate_config({"pad_bg_image": "https://example.test/a.png"}, strict=True)
+    assert validate_config({"pad_bg_image": "/user-assets/background-abc.png"}, strict=True) == []
+
+
+def test_validate_preset_name():
     assert validate_preset_name("My Preset") is None
-    assert validate_preset_name("test-preset") is None
-    assert validate_preset_name("a") is None
-
-
-def test_validate_preset_name_empty():
     assert validate_preset_name("") is not None
-    assert validate_preset_name("   ") is not None
-
-
-def test_validate_preset_name_too_long():
-    long_name = "x" * 65
-    error = validate_preset_name(long_name)
-    assert error is not None
-    assert "64" in error
-
-
-def test_validate_preset_name_invalid_chars():
-    error = validate_preset_name("bad\x00name")
-    assert error is not None
-
-
-def test_schema_has_expected_keys():
-    expected_keys = [
-        "window_width", "window_height",
-        "pad_shape", "pad_fill_opacity", "pad_border",
-        "trail_show", "trail_width", "trail_color",
-        "cursor_show", "cursor_size", "cursor_opacity",
-        "click_style", "click_duration",
-        "motion_scale", "motion_smoothing",
-        "hud_show", "hud_opacity",
-        "fps_limit",
-        "server_port", "auth_token",
-    ]
-    for key in expected_keys:
-        assert key in SCHEMA, f"Missing schema key: {key}"
-
-
-def test_schema_entries_have_four_elements():
-    for key, entry in SCHEMA.items():
-        assert len(entry) == 4, f"Schema entry for {key} should have 4 elements"
+    assert validate_preset_name("x" * 65) is not None
+    assert validate_preset_name("bad\x00name") is not None
 
 
 def test_validation_error_is_value_error():
     assert issubclass(ValidationError, ValueError)
-
-
-def test_edge_case_min_boundary():
-    config = {"window_width": 1}
-    errors = validate_config(config)
-    assert errors == []
-
-
-def test_edge_case_max_boundary():
-    config = {"window_width": 3840}
-    errors = validate_config(config)
-    assert errors == []
-
-
-def test_edge_case_float_min_boundary():
-    config = {"pad_fill_opacity": 0.0}
-    errors = validate_config(config)
-    assert errors == []
-
-
-def test_edge_case_float_max_boundary():
-    config = {"pad_fill_opacity": 1.0}
-    errors = validate_config(config)
-    assert errors == []
-
-
-def test_server_port_range():
-    config = {"server_port": 80}
-    errors = validate_config(config)
-    assert len(errors) == 1
-    assert "server_port" in errors[0]

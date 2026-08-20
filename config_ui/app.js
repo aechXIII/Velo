@@ -1,5 +1,8 @@
   const token = new URLSearchParams(location.search).get("token") || "";
   const authHeaders = token ? { Authorization: "Bearer " + token } : {};
+  if (token) {
+    try { history.replaceState(null, "", location.pathname + location.hash); } catch (_) {}
+  }
 
   function blockSideNav(e) {
     if (e.button === 3 || e.button === 4) {
@@ -237,9 +240,10 @@
 
     toastContainer.appendChild(el);
 
-    const items = toastContainer.querySelectorAll(".toast-item");
-    while (items.length > MAX_TOASTS) {
-      removeToast(items[0]);
+    const items = Array.from(toastContainer.querySelectorAll(".toast-item"));
+    const overflow = Math.max(0, items.length - MAX_TOASTS);
+    for (let i = 0; i < overflow; i++) {
+      removeToast(items[i]);
     }
 
     const duration = (t === "error" || t === "warning") ? 5000 : 3000;
@@ -398,8 +402,7 @@
   });
 
   function api(path, opts = {}) {
-    const q = token ? (path.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token) : "";
-    return fetch(path + q, {
+    return fetch(path, {
       ...opts,
       headers: {
         ...(opts.headers || {}),
@@ -935,11 +938,21 @@ updateTrailColorUi();
 
   function updateStartupUi() {
     const auto = !!cfg.start_with_windows;
+    const autostartSupported = !runtimeStatus || runtimeStatus.autostart_supported !== false;
+    const autoChk = $("chk-autostart");
+    const autoNote = $("autostart-note");
     const minLabel = $("label-minimized");
     const minChk = $("chk-minimized");
-    if (minLabel) minLabel.classList.toggle("is-disabled", !auto);
+    if (autoChk) autoChk.disabled = !autostartSupported;
+    if (autoNote) {
+      autoNote.hidden = autostartSupported;
+      autoNote.textContent = autostartSupported
+        ? ""
+        : "Autostart is unavailable in the itch.io edition so uninstalling cannot leave a registry entry behind.";
+    }
+    if (minLabel) minLabel.classList.toggle("is-disabled", !auto || !autostartSupported);
     if (minChk) {
-      minChk.disabled = !auto;
+      minChk.disabled = !auto || !autostartSupported;
       if (!auto) minChk.checked = false;
     }
   }
@@ -956,6 +969,7 @@ updateTrailColorUi();
     }
   }
 
+  let runtimeStatus = null;
   let updateState = null;
   let updatePollBusy = false;
   let updateModalOpen = false;
@@ -980,10 +994,13 @@ updateTrailColorUi();
     const progress = state && state.download_progress;
     const available = !!(state && state.available && state.pending);
     const latest = state && (state.latest_version || (state.pending && state.pending.version));
+    const managedExternally = !!(state && state.managed_externally);
+    const updateSelect = $("sel-update-check");
 
     if (line) {
       let text = current ? "v" + current : "-";
-      if (checking) text += " - Checking...";
+      if (managedExternally) text += " - Updates managed by itch.io";
+      else if (checking) text += " - Checking...";
       else if (installing) {
         const pct =
           progress != null && progress >= 0
@@ -1007,11 +1024,18 @@ updateTrailColorUi();
 
     const busy = checking || installing;
     if (btnCheck) {
-      btnCheck.disabled = busy;
-      btnCheck.textContent = checking ? "Checking..." : "Check now";
+      btnCheck.disabled = busy || managedExternally;
+      btnCheck.textContent = managedExternally
+        ? "Managed by itch.io"
+        : checking
+          ? "Checking..."
+          : "Check now";
     }
+    if (updateSelect) updateSelect.disabled = managedExternally;
 
-    if (updateModalOpen) {
+    if (managedExternally && updateModalOpen) {
+      closeUpdateModal();
+    } else if (updateModalOpen) {
       syncUpdateModal(state);
     } else {
       maybeShowUpdateModal(state);
@@ -1877,6 +1901,20 @@ updateTrailColorUi();
     try {
       const res = await api("/api/status");
       const s = await res.json();
+      runtimeStatus = s;
+      updateStartupUi();
+      const aboutVersion = $("about-version");
+      const aboutDistribution = $("about-distribution");
+      const recoveryNotice = $("recovery-notice");
+      if (aboutVersion) aboutVersion.textContent = s.version ? "v" + s.version : "-";
+      if (aboutDistribution) {
+        aboutDistribution.textContent = s.distribution_label || "Standard edition";
+      }
+      if (recoveryNotice) {
+        const notice = String(s.recovery_notice || "").trim();
+        recoveryNotice.hidden = !notice;
+        recoveryNotice.textContent = notice;
+      }
       applyExcludeKeys(s.exclude_keys);
       const parts = [];
       if (s.error || !s.running) {
@@ -1899,15 +1937,25 @@ updateTrailColorUi();
 
   async function exportSettings() {
     try {
+      const choice = await showModal({
+        title: "Export settings",
+        message:
+          "A safe export excludes the local host, port, and authentication token. Use a full backup only for private recovery.",
+        confirmText: "Safe export",
+        secondaryText: "Full backup",
+        cancelText: "Cancel",
+      });
+      if (!choice.ok || choice.action === "cancel") return;
+      const includeConnection = choice.action === "secondary";
       const res = await api("/api/config/export-dialog", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ include_connection: true }),
+        body: JSON.stringify({ include_connection: includeConnection }),
       });
       const data = await readJson(res);
       if (data.cancelled) return;
       if (!res.ok || !data.ok) throw new Error(data.error || "export");
-      toast(data.path ? "Saved" : "Exported", "success");
+      toast(includeConnection ? "Full backup saved" : "Safe settings export saved", "success");
     } catch (e) {
       toast(String(e.message || e) || "Export failed", "error");
     }
@@ -1975,6 +2023,30 @@ updateTrailColorUi();
       } catch (_) {
         return false;
       }
+    }
+  }
+
+  async function copyDiagnostics() {
+    try {
+      const res = await api("/api/diagnostics");
+      const data = await readJson(res);
+      if (!res.ok || !data.ok) throw new Error(data.error || "diagnostics");
+      const ok = await copyText(String(data.text || ""));
+      if (!ok) throw new Error("Clipboard unavailable");
+      toast("Diagnostics copied", "success");
+    } catch (e) {
+      toast(String(e.message || e) || "Could not copy diagnostics", "error");
+    }
+  }
+
+  async function runSupportAction(endpoint, successMessage) {
+    try {
+      const res = await api(endpoint, { method: "POST" });
+      const data = await readJson(res);
+      if (!res.ok || !data.ok) throw new Error(data.error || "action failed");
+      toast(successMessage, "success");
+    } catch (e) {
+      toast(String(e.message || e) || "Action failed", "error");
     }
   }
 
@@ -2196,6 +2268,34 @@ updateTrailColorUi();
   if ($("btn-copy-size")) $("btn-copy-size").addEventListener("click", copySize);
   if ($("btn-export")) $("btn-export").addEventListener("click", exportSettings);
   if ($("btn-import")) $("btn-import").addEventListener("click", importSettings);
+  if ($("btn-copy-diagnostics")) {
+    $("btn-copy-diagnostics").addEventListener("click", copyDiagnostics);
+  }
+  if ($("btn-open-logs")) {
+    $("btn-open-logs").addEventListener("click", () =>
+      runSupportAction("/api/support/open-logs", "Logs folder opened")
+    );
+  }
+  if ($("btn-open-config")) {
+    $("btn-open-config").addEventListener("click", () =>
+      runSupportAction("/api/support/open-config", "Config folder opened")
+    );
+  }
+  if ($("btn-report-problem")) {
+    $("btn-report-problem").addEventListener("click", () =>
+      runSupportAction("/api/support/report", "Issue page opened")
+    );
+  }
+  if ($("btn-project-page")) {
+    $("btn-project-page").addEventListener("click", () =>
+      runSupportAction("/api/support/project", "GitHub opened")
+    );
+  }
+  if ($("btn-third-party")) {
+    $("btn-third-party").addEventListener("click", () =>
+      runSupportAction("/api/support/licenses", "Third-party notices opened")
+    );
+  }
   if ($("btn-update-check")) $("btn-update-check").addEventListener("click", checkForUpdates);
   if (updateModalInstall) updateModalInstall.addEventListener("click", installUpdate);
   if (updateModalLater) updateModalLater.addEventListener("click", remindUpdateLater);
@@ -2398,6 +2498,7 @@ updateTrailColorUi();
   /* Preset hotkeys - dynamic from cfg.preset_hotkeys */
   const presetHotkeysEl = $("preset-hotkeys");
   let presetHotkeyListeningIdx = -1;
+  let presetHotkeyStop = null;
 
   function getPresetNames() {
     const names = [];
@@ -2412,19 +2513,38 @@ updateTrailColorUi();
     if (!presetHotkeysEl) return;
     const hotkeys = cfg.preset_hotkeys || [];
     const names = getPresetNames();
-    let html = "";
+    presetHotkeysEl.replaceChildren();
     hotkeys.forEach((entry, i) => {
-      const key = entry.key || "";
-      const target = entry.target || "";
-      const opts = '<option value="">Empty</option>' +
-        names.map(n => '<option value="' + n.replace(/"/g, "&quot;") + '"' + (n === target ? " selected" : "") + '>' + n + '</option>').join("");
-      html += '<div class="phk" data-idx="' + i + '">' +
-        '<select class="phk-target">' + opts + '</select>' +
-        '<button type="button" class="btn btn-sm phk-bind">' + (key || "Click to bind") + '</button>' +
-        '<button type="button" class="phk-clear" title="Remove">X</button>' +
-        '</div>';
+      const key = String(entry.key || "");
+      const target = String(entry.target || "");
+      const row = document.createElement("div");
+      row.className = "phk";
+      row.dataset.idx = String(i);
+      const select = document.createElement("select");
+      select.className = "phk-target";
+      const empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = "Empty";
+      select.appendChild(empty);
+      names.forEach((name) => {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        option.selected = name === target;
+        select.appendChild(option);
+      });
+      const bind = document.createElement("button");
+      bind.type = "button";
+      bind.className = "btn btn-sm phk-bind";
+      bind.textContent = key || "Click to bind";
+      const clear = document.createElement("button");
+      clear.type = "button";
+      clear.className = "phk-clear";
+      clear.title = "Remove";
+      clear.textContent = "X";
+      row.append(select, bind, clear);
+      presetHotkeysEl.appendChild(row);
     });
-    presetHotkeysEl.innerHTML = html;
     wirePresetHotkeyEvents();
   }
 
@@ -2451,22 +2571,16 @@ updateTrailColorUi();
         function stop() {
           window.removeEventListener("keydown", handler, true);
           presetHotkeyListeningIdx = -1;
+          presetHotkeyStop = null;
           // refresh all
           renderPresetHotkeys();
         }
+        presetHotkeyStop = stop;
         const handler = (e) => {
           e.preventDefault();
           e.stopPropagation();
-          const k = e.key.toUpperCase();
-          if (k === "CONTROL" || k === "SHIFT" || k === "ALT" || k === "META") return;
-          const mods = [];
-          if (e.ctrlKey) mods.push("Ctrl");
-          if (e.shiftKey) mods.push("Shift");
-          if (e.altKey) mods.push("Alt");
-          if (e.metaKey) mods.push("Win");
-          let keyName = k;
-          if (k === " ") keyName = "Space";
-          const spec = [...mods, keyName].join("+");
+          const spec = formatHotkeyFromEvent(e);
+          if (!spec) return;
           const hotkeys = (cfg.preset_hotkeys || []).slice();
           if (idx < hotkeys.length) hotkeys[idx] = { ...hotkeys[idx], key: spec };
           stop();
@@ -2486,7 +2600,9 @@ updateTrailColorUi();
     });
   }
 
-  function stopPresetHotkeyListen() {}
+  function stopPresetHotkeyListen() {
+    if (presetHotkeyStop) presetHotkeyStop();
+  }
 
   if ($("btn-add-hotkey")) {
     $("btn-add-hotkey").addEventListener("click", () => {
@@ -2851,7 +2967,7 @@ updateTrailColorUi();
 
   async function checkOnboarding() {
     try {
-      var resp = await fetch("/api/onboarding");
+      var resp = await api("/api/onboarding");
       var data = await resp.json();
       if (data.show) {
         showOnboarding();
@@ -2871,4 +2987,3 @@ updateTrailColorUi();
       statusEl.textContent = "Failed to load";
       console.error(e);
     });
-

@@ -1,5 +1,5 @@
 pyinstaller==6.21.0
-pytest==8.4.2
+pytest==9.1.1
 pytest-asyncio==1.2.0
 bump-my-version==1.4.1
 ruff==0.16.0

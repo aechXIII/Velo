@@ -5,7 +5,7 @@
 
 #define AppName      "Velo"
 #define AppVersion   "2.3.1"
-#define AppPublisher "aech"
+#define AppPublisher "aechXIII"
 #define AppURL       "https://github.com/aechXIII/Velo"
 #define AppSupportURL "https://github.com/aechXIII/Velo/issues"
 #define AppUpdatesURL "https://github.com/aechXIII/Velo/releases"
@@ -41,7 +41,7 @@ LicenseFile=..\LICENSE
 VersionInfoVersion={#AppVersion}
 VersionInfoCompany={#AppPublisher}
 VersionInfoDescription={#AppName} Setup
-VersionInfoCopyright=Copyright (c) 2026 aech
+VersionInfoCopyright=Copyright (c) 2026 aechXIII
 CloseApplications=yes
 CloseApplicationsFilter={#AppExeName}
 RestartApplications=no

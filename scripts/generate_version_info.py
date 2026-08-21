@@ -47,11 +47,11 @@ def main() -> int:
       StringTable(
         '040904B0',
         [
-          StringStruct('CompanyName', 'aech'),
+          StringStruct('CompanyName', 'aechXIII'),
           StringStruct('FileDescription', 'Velo mouse input overlay for OBS'),
           StringStruct('FileVersion', '{dotted_version}'),
           StringStruct('InternalName', 'Velo'),
-          StringStruct('LegalCopyright', 'Copyright (c) 2026 aech'),
+          StringStruct('LegalCopyright', 'Copyright (c) 2026 aechXIII'),
           StringStruct('OriginalFilename', 'Velo.exe'),
           StringStruct('ProductName', 'Velo'),
           StringStruct('ProductVersion', '{dotted_version}')

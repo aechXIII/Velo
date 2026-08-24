@@ -130,6 +130,10 @@ button, input, select, textarea {
   pointer-events: none;
 }
 
+.preview-viewport.is-cropping {
+  pointer-events: auto;
+}
+
 .preview-viewport.is-off {
   display: none;
 }
@@ -1178,6 +1182,73 @@ section[data-section="presets"] > .preset-import-block {
 
 .slider {
   margin-bottom: 14px;
+}
+
+.image-source-actions {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-bottom: 10px;
+}
+
+.image-source-actions .btn-block {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.crop-edit-btn[aria-pressed="true"] {
+  color: var(--text);
+  border-color: var(--focus);
+  background: color-mix(in srgb, var(--focus) 14%, var(--elev));
+}
+
+.crop-zoom {
+  margin-top: 14px;
+}
+
+.zoom-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text);
+}
+
+.zoom-value input {
+  width: 58px;
+  height: 28px;
+  padding: 4px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: #262626;
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  outline: none;
+}
+
+.zoom-value input:focus-visible {
+  border-color: var(--focus);
+  outline: 2px solid color-mix(in srgb, var(--focus) 40%, transparent);
+  outline-offset: 1px;
+}
+
+.crop-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.crop-actions .btn {
+  min-width: 0;
+  padding-inline: 6px;
+}
+
+.crop-actions .btn.active {
+  color: var(--text);
+  border-color: var(--focus);
+  background: color-mix(in srgb, var(--focus) 12%, var(--elev));
 }
 
 .slider-h {

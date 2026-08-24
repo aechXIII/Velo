@@ -987,8 +987,16 @@ class VeloServer:
             return result
         try:
             asset_url = self.config.store_background_image(Path(result))
-            self.config.update({"pad_bg_image": asset_url}, persist=True)
-            return web.json_response({"ok": True, "data": {"pad_bg_image": asset_url}})
+            patch = {
+                "pad_bg_image": asset_url,
+                "pad_bg_image_enabled": True,
+                "pad_bg_image_size": "cover",
+                "pad_bg_image_zoom": 1.0,
+                "pad_bg_image_pos_x": 50.0,
+                "pad_bg_image_pos_y": 50.0,
+            }
+            self.config.update(patch, persist=True)
+            return web.json_response({"ok": True, "data": patch})
         except (OSError, ValueError) as exc:
             return web.json_response({"ok": False, "error": str(exc)}, status=400)
 

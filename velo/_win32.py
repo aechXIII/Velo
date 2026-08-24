@@ -1,4 +1,4 @@
-"""Win32 type definitions and function prototypes for Raw Input."""
+"""Win32 type definitions and helpers."""
 
 from __future__ import annotations
 
@@ -33,6 +33,11 @@ WS_EX_TOOLWINDOW = 0x00000080
 WS_POPUP = 0x80000000
 PM_REMOVE = 0x0001
 ERROR_CLASS_ALREADY_EXISTS = 1410
+CREATE_WAITABLE_TIMER_HIGH_RESOLUTION = 0x00000002
+TIMER_MODIFY_STATE = 0x0002
+SYNCHRONIZE = 0x00100000
+INFINITE = 0xFFFFFFFF
+WAIT_OBJECT_0 = 0
 
 LRESULT = ctypes.c_ssize_t
 HCURSOR = getattr(wintypes, "HCURSOR", wintypes.HANDLE)
@@ -214,3 +219,102 @@ kernel32.GetCurrentThread.restype = wintypes.HANDLE
 
 kernel32.SetThreadPriority.argtypes = [wintypes.HANDLE, ctypes.c_int]
 kernel32.SetThreadPriority.restype = wintypes.BOOL
+
+kernel32.CreateWaitableTimerExW.argtypes = [
+    wintypes.LPVOID,
+    wintypes.LPCWSTR,
+    wintypes.DWORD,
+    wintypes.DWORD,
+]
+kernel32.CreateWaitableTimerExW.restype = wintypes.HANDLE
+
+kernel32.SetWaitableTimer.argtypes = [
+    wintypes.HANDLE,
+    ctypes.POINTER(ctypes.c_longlong),
+    wintypes.LONG,
+    wintypes.LPVOID,
+    wintypes.LPVOID,
+    wintypes.BOOL,
+]
+kernel32.SetWaitableTimer.restype = wintypes.BOOL
+
+kernel32.CreateEventW.argtypes = [
+    wintypes.LPVOID,
+    wintypes.BOOL,
+    wintypes.BOOL,
+    wintypes.LPCWSTR,
+]
+kernel32.CreateEventW.restype = wintypes.HANDLE
+
+kernel32.SetEvent.argtypes = [wintypes.HANDLE]
+kernel32.SetEvent.restype = wintypes.BOOL
+
+kernel32.WaitForMultipleObjects.argtypes = [
+    wintypes.DWORD,
+    ctypes.POINTER(wintypes.HANDLE),
+    wintypes.BOOL,
+    wintypes.DWORD,
+]
+kernel32.WaitForMultipleObjects.restype = wintypes.DWORD
+
+kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+kernel32.CloseHandle.restype = wintypes.BOOL
+
+
+class HighResolutionWaiter:
+    """Interruptible Windows timer for sub-frame scheduling."""
+
+    def __init__(self) -> None:
+        access = TIMER_MODIFY_STATE | SYNCHRONIZE
+        self._timer = kernel32.CreateWaitableTimerExW(
+            None,
+            None,
+            CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+            access,
+        )
+        if not self._timer:
+            self._timer = kernel32.CreateWaitableTimerExW(None, None, 0, access)
+        if not self._timer:
+            raise ctypes.WinError(ctypes.get_last_error())
+
+        self._stop_event = kernel32.CreateEventW(None, True, False, None)
+        if not self._stop_event:
+            error = ctypes.WinError(ctypes.get_last_error())
+            kernel32.CloseHandle(self._timer)
+            self._timer = None
+            raise error
+
+        self._handles = (wintypes.HANDLE * 2)(self._stop_event, self._timer)
+
+    def wait(self, delay_seconds: float) -> bool:
+        """Wait for the delay, returning True if interrupted."""
+        ticks = max(1, round(max(0.0, delay_seconds) * 10_000_000))
+        due_time = ctypes.c_longlong(-ticks)
+        if not kernel32.SetWaitableTimer(
+            self._timer,
+            ctypes.byref(due_time),
+            0,
+            None,
+            None,
+            False,
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+        result = kernel32.WaitForMultipleObjects(2, self._handles, False, INFINITE)
+        if result == WAIT_OBJECT_0:
+            return True
+        if result == WAIT_OBJECT_0 + 1:
+            return False
+        raise ctypes.WinError(ctypes.get_last_error())
+
+    def stop(self) -> None:
+        if self._stop_event and not kernel32.SetEvent(self._stop_event):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    def close(self) -> None:
+        if self._stop_event:
+            kernel32.CloseHandle(self._stop_event)
+            self._stop_event = None
+        if self._timer:
+            kernel32.CloseHandle(self._timer)
+            self._timer = None

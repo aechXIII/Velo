@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from velo.config_types import ConfigMap
+from velo.constants import MAX_STATS_UPDATE_HZ, MIN_STATS_UPDATE_HZ
 from velo.defaults import DEFAULTS
 
 
@@ -68,8 +69,12 @@ _RANGES: dict[str, tuple[float, float]] = {
     "stats_x_pct": (0.0, 100.0),
     "stats_y_pct": (0.0, 100.0),
     "stats_dpi": (100, 32000),
+    "stats_update_rate": (MIN_STATS_UPDATE_HZ, MAX_STATS_UPDATE_HZ),
     "backup_max_count": (1, 50),
     "pad_bg_image_opacity": (0.0, 1.0),
+    "pad_bg_image_zoom": (0.1, 8.0),
+    "pad_bg_image_pos_x": (0.0, 100.0),
+    "pad_bg_image_pos_y": (0.0, 100.0),
 }
 
 _ENUMS: dict[str, frozenset[str]] = {
@@ -83,7 +88,6 @@ _ENUMS: dict[str, frozenset[str]] = {
     "pad_shape": frozenset({"rounded", "rect", "pill", "circle", "stadium"}),
     "canvas_aspect": frozenset({"16:9", "4:3", "1:1", "21:9", "custom"}),
     "stats_units": frozenset({"cm", "m", "raw"}),
-    "stats_update_rate": frozenset({"slow", "normal", "fast"}),
     "update_check_mode": frozenset({"launch", "daily", "off"}),
     "active_preset_kind": frozenset({"builtin", "user"}),
     "pad_bg_image_size": frozenset({"cover", "contain", "100% 100%"}),

@@ -1,3 +1,8 @@
+  import {
+    beginCropPreviewSession,
+    finishCropPreviewSession,
+  } from "./crop_preview_session.js";
+
   const token = new URLSearchParams(location.search).get("token") || "";
   const authHeaders = token ? { Authorization: "Bearer " + token } : {};
   if (token) {
@@ -30,11 +35,11 @@
   const SECTION_KEYS = {
     presets: [],
     size: ["canvas_aspect", "canvas_width", "canvas_height"],
-    background: ["pad_shape", "pad_radius", "pad_bg_enabled", "pad_bg_color", "pad_bg_opacity", "pad_blur", "pad_shadow", "pad_shadow_opacity", "pad_vignette", "pad_vignette_opacity", "pad_clip_trail", "source_bg_enabled", "source_bg_color", "source_bg_opacity", "overlay_opacity", "pad_grid", "pad_grid_size", "pad_grid_thickness", "pad_grid_color", "pad_grid_opacity", "pad_border_enabled", "pad_border_color", "pad_border_opacity", "pad_border_width", "pad_glow_enabled", "pad_glow_color", "pad_glow_opacity", "pad_glow_blur"],
+    background: ["pad_shape", "pad_radius", "pad_bg_enabled", "pad_bg_color", "pad_bg_opacity", "pad_blur", "pad_shadow", "pad_shadow_opacity", "pad_vignette", "pad_vignette_opacity", "pad_clip_trail", "source_bg_enabled", "source_bg_color", "source_bg_opacity", "overlay_opacity", "pad_grid", "pad_grid_size", "pad_grid_thickness", "pad_grid_color", "pad_grid_opacity", "pad_border_enabled", "pad_border_color", "pad_border_opacity", "pad_border_width", "pad_glow_enabled", "pad_glow_color", "pad_glow_opacity", "pad_glow_blur", "pad_bg_image_enabled", "pad_bg_image_opacity", "pad_bg_image_size", "pad_bg_image_zoom", "pad_bg_image_pos_x", "pad_bg_image_pos_y"],
     motion: ["capture_mode", "invert_y", "sensitivity", "view_mode", "camera_lag", "camera_look_ahead", "camera_follow", "view_zoom", "motion_scale", "motion_ease", "motion_feel"],
     trail: ["trail_enabled", "trail_lifetime_ms", "trail_max_points", "trail_width", "trail_glow", "trail_glow_blur", "trail_glow_opacity", "trail_glow_width", "trail_glow_custom_color", "trail_glow_custom_color_val", "trail_min_distance", "trail_smoothing", "trail_curve", "trail_samples", "fade_style", "trail_color", "speed_colorize", "speed_stops", "speed_max", "speed_min"],
     cursor: ["show_cursor_dot", "cursor_dot_size", "cursor_dot_color", "cursor_dot_opacity", "show_clicks", "click_lifetime_ms", "click_radius", "click_line_width", "click_opacity", "click_expand", "click_style", "click_show", "click_colors"],
-    hud: ["show_stats", "stats_opacity", "stats_bg", "stats_border", "stats_x_pct", "stats_y_pct", "stats_show_speed", "stats_show_peak", "stats_show_cps", "stats_show_clicks", "stats_show_distance", "stats_units", "stats_dpi", "stats_update_rate", "hud_show_avg_speed", "hud_show_sparkline", "chart_color"],
+    hud: ["show_stats", "stats_opacity", "stats_bg", "stats_bg_color", "stats_border", "stats_x_pct", "stats_y_pct", "stats_show_speed", "stats_show_peak", "stats_show_cps", "stats_show_clicks", "stats_show_distance", "stats_units", "stats_dpi", "stats_update_rate", "hud_show_avg_speed", "hud_show_sparkline", "chart_color"],
     performance: ["render_quality", "target_fps", "ws_send_hz", "trail_max_points", "trail_samples"],
     obs: [],
     settings: [],
@@ -113,6 +118,9 @@
     pad_grid_thickness: 1.0,
     pad_grid_color: "#ffffff",
     pad_grid_opacity: 0.08,
+    pad_bg_image_zoom: 1.0,
+    pad_bg_image_pos_x: 50.0,
+    pad_bg_image_pos_y: 50.0,
     pad_vignette: false,
     pad_vignette_opacity: 0.3,
     pad_clip_trail: true,
@@ -130,6 +138,7 @@
     show_stats: false,
     stats_opacity: 0.55,
     stats_bg: true,
+    stats_bg_color: "#0a0b0f",
     stats_border: true,
     stats_x_pct: 0.0,
     stats_y_pct: 100.0,
@@ -140,7 +149,7 @@
     stats_show_distance: true,
     stats_units: "cm",
     stats_dpi: 800,
-    stats_update_rate: "normal",
+    stats_update_rate: 24,
     stats_reset_hotkey: "",
     start_minimized: false,
     start_with_windows: false,
@@ -159,6 +168,10 @@
   let presetInfo = { builtin: [], user: [], active: "", active_kind: "builtin" };
   let selectedPreset = { name: "", kind: "builtin" };
   let applyTimer = null;
+  let pendingPatch = {};
+  let bgCropEditing = false;
+  let bgCropPreviewSession = null;
+  let pendingBgCropCommand = null;
   let suppress = false;
   let previewMode = "lite";
   let previewAuto = false;
@@ -709,6 +722,18 @@
   function onPreviewLoad() {
     if (previewLoading) previewLoading.hidden = true;
     if (previewError) previewError.hidden = true;
+    if (!frame || !frame.src.startsWith(location.origin)) return;
+    frame.contentWindow.postMessage(
+      { type: "velo-bg-editor", enabled: bgCropEditing },
+      location.origin,
+    );
+    if (pendingBgCropCommand) {
+      frame.contentWindow.postMessage(
+        { type: "velo-bg-command", command: pendingBgCropCommand },
+        location.origin,
+      );
+      pendingBgCropCommand = null;
+    }
   }
 
   function onPreviewError() {
@@ -716,18 +741,25 @@
     if (previewError) previewError.hidden = false;
   }
 
-  function setPreviewMode(mode, persist) {
+  function setPreviewMode(mode, persist, options = {}) {
     const valid = ["off", "lite", "live", "auto"];
-    previewMode = valid.indexOf(mode) !== -1 ? mode : "lite";
-    previewAuto = mode === "auto";
+    let nextMode = valid.indexOf(mode) !== -1 ? mode : "lite";
+    if (bgCropEditing && !options.preserveCrop) {
+      nextMode = finishCropPreviewSession(bgCropPreviewSession, nextMode).mode;
+      setBgCropEditing(false, false);
+    }
+    previewMode = nextMode;
+    previewAuto = previewMode === "auto";
     updatePreviewModeBtns();
     loadPreview();
     if (persist) queuePatch({ ui_preview_mode: previewMode });
+    else cfg.ui_preview_mode = previewMode;
   }
 
   function showSection(id, persist) {
     if (id === "grid" || id === "border") id = "background";
     currentSection = id || "presets";
+    if (currentSection !== "background" && bgCropEditing) setBgCropEditing(false);
     document.querySelectorAll(".sec-btn").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.section === currentSection);
     });
@@ -922,8 +954,9 @@
     for (let i = 0; i < 4; i++) {
       setColor("speed-stop-" + i, stops[i].color);
     }
-updateTrailColorUi();
+    updateTrailColorUi();
     updateGlowOptionsUi();
+    updateHudBackgroundUi();
     updateHotkeyUi();
     updateStartupUi();
 
@@ -1343,6 +1376,11 @@ updateTrailColorUi();
     if (colorField) colorField.hidden = !customColor;
   }
 
+  function updateHudBackgroundUi() {
+    const backgroundOptions = $("hud-background-options");
+    if (backgroundOptions) backgroundOptions.hidden = !cfg.stats_bg;
+  }
+
   function coerce(el) {
     if (el.type === "checkbox") return el.checked;
     if (el.type === "range" || el.type === "number" || el.hasAttribute("data-num")) {
@@ -1372,8 +1410,12 @@ updateTrailColorUi();
       "click_lifetime_ms",
       "click_radius",
       "stats_dpi",
+      "stats_update_rate",
     ]);
     if (intKeys.has(key) && typeof val === "number") val = Math.round(val);
+    if (key === "stats_update_rate" && typeof val === "number") {
+      val = Math.max(1, Math.min(240, val));
+    }
     return { [key]: val };
   }
 
@@ -1423,6 +1465,7 @@ updateTrailColorUi();
     }
     if ("speed_colorize" in patch) updateTrailColorUi();
     if ("trail_glow" in patch || "trail_glow_custom_color" in patch) updateGlowOptionsUi();
+    if ("stats_bg" in patch) updateHudBackgroundUi();
     if ("start_with_windows" in patch || "start_minimized" in patch) {
       if ("start_with_windows" in patch && !patch.start_with_windows) {
         cfg.start_minimized = false;
@@ -1433,14 +1476,26 @@ updateTrailColorUi();
     if ("accent_color" in patch || "bg_color" in patch) {
       applyAccentColors(cfg);
     }
-    if ("pad_bg_image" in patch || "pad_bg_image_enabled" in patch) {
+    if (
+      "pad_bg_image" in patch ||
+      "pad_bg_image_enabled" in patch ||
+      "pad_bg_image_opacity" in patch ||
+      "pad_bg_image_size" in patch ||
+      "pad_bg_image_zoom" in patch ||
+      "pad_bg_image_pos_x" in patch ||
+      "pad_bg_image_pos_y" in patch
+    ) {
       updateBgImageUi();
     }
     const dirtyKeys = Object.keys(patch).filter((k) => !presetExclude.has(k));
     if (dirtyKeys.length) recomputePresetDirty();
 
+    Object.assign(pendingPatch, patch);
     clearTimeout(applyTimer);
     applyTimer = setTimeout(() => {
+      const patchToPersist = pendingPatch;
+      pendingPatch = {};
+      applyTimer = null;
       if (undoSnapshot) {
         undoStack.push(undoSnapshot);
         if (undoStack.length > MAX_UNDO) undoStack.shift();
@@ -1448,7 +1503,7 @@ updateTrailColorUi();
         undoSnapshot = null;
         updateUndoRedoButtons();
       }
-      persist(patch);
+      persist(patchToPersist);
     }, 80);
   }
 
@@ -1487,7 +1542,17 @@ updateTrailColorUi();
       if (data.data) {
         cfg = data.data;
         updateSectionDots();
-        if ("render_quality" in patch || "motion_feel" in patch || "preset_hotkeys" in patch || "pad_bg_image" in patch || "pad_bg_image_enabled" in patch) bindForm();
+        if (
+          "render_quality" in patch ||
+          "motion_feel" in patch ||
+          "preset_hotkeys" in patch ||
+          "pad_bg_image" in patch ||
+          "pad_bg_image_enabled" in patch ||
+          "pad_bg_image_size" in patch ||
+          "pad_bg_image_zoom" in patch ||
+          "pad_bg_image_pos_x" in patch ||
+          "pad_bg_image_pos_y" in patch
+        ) bindForm();
         else {
           updateFeelUi();
           recomputePresetDirty();
@@ -1505,6 +1570,13 @@ updateTrailColorUi();
     if (suppress) return;
     const t = ev.target;
     if (t.classList.contains("val-input") && t.hasAttribute("data-link")) {
+      const key = t.getAttribute("data-link");
+      if (key === "stats_update_rate" && t.value === "") {
+        if (ev.type === "change") {
+          t.value = cfg.stats_update_rate ?? DEFAULT_CFG.stats_update_rate;
+        }
+        return;
+      }
       const patch = collect(t);
       if (patch) queuePatch(patch);
       return;
@@ -2466,6 +2538,75 @@ updateTrailColorUi();
   /* Background image */
   const btnBgImage = $("btn-bg-image");
   const btnBgImageClear = $("btn-bg-image-clear");
+  const btnBgCrop = $("btn-bg-crop");
+  const bgImageZoomInput = $("bg-image-zoom-input");
+
+  function previewCanReceiveCropMessages() {
+    return !!(
+      frame &&
+      frame.contentWindow &&
+      !frame.hidden &&
+      frame.src &&
+      frame.src.startsWith(location.origin)
+    );
+  }
+
+  function setBgCropEditing(enabled, restorePreview = true) {
+    const nextEditing = !!enabled && !!cfg.pad_bg_image_enabled && !!cfg.pad_bg_image;
+    if (nextEditing && !bgCropEditing) {
+      bgCropPreviewSession = beginCropPreviewSession(previewMode);
+      bgCropEditing = true;
+      if (previewMode !== bgCropPreviewSession.mode) {
+        setPreviewMode(bgCropPreviewSession.mode, false, { preserveCrop: true });
+      }
+    } else if (!nextEditing && bgCropEditing) {
+      bgCropEditing = false;
+      const session = bgCropPreviewSession;
+      bgCropPreviewSession = null;
+      if (restorePreview && session) {
+        const restored = finishCropPreviewSession(session);
+        if (previewMode !== restored.mode) setPreviewMode(restored.mode, false);
+      }
+    } else {
+      bgCropEditing = nextEditing;
+    }
+    if (previewViewport) previewViewport.classList.toggle("is-cropping", bgCropEditing);
+    if (btnBgCrop) {
+      btnBgCrop.setAttribute("aria-pressed", bgCropEditing ? "true" : "false");
+      btnBgCrop.textContent = bgCropEditing ? "Finish adjusting" : "Adjust crop in preview";
+    }
+    if (previewCanReceiveCropMessages()) {
+      frame.contentWindow.postMessage(
+        { type: "velo-bg-editor", enabled: bgCropEditing },
+        location.origin,
+      );
+    }
+  }
+
+  function sendBgCropCommand(command) {
+    if (previewCanReceiveCropMessages()) {
+      frame.contentWindow.postMessage(
+        { type: "velo-bg-command", command },
+        location.origin,
+      );
+      return;
+    }
+    if (command === "fit") {
+      queuePatch({ pad_bg_image_size: "contain", pad_bg_image_zoom: 1, pad_bg_image_pos_x: 50, pad_bg_image_pos_y: 50 });
+      return;
+    }
+    if (command === "fill") {
+      queuePatch({ pad_bg_image_size: "cover", pad_bg_image_zoom: 1, pad_bg_image_pos_x: 50, pad_bg_image_pos_y: 50 });
+      return;
+    }
+    if (command === "center") {
+      queuePatch({ pad_bg_image_pos_x: 50, pad_bg_image_pos_y: 50 });
+      return;
+    }
+    pendingBgCropCommand = command;
+    setPreviewMode("live", true);
+  }
+
   function updateBgImageUi() {
     const enabled = !!cfg.pad_bg_image_enabled;
     const has = enabled && !!cfg.pad_bg_image;
@@ -2473,6 +2614,20 @@ updateTrailColorUi();
     if (btnBgImageClear) btnBgImageClear.hidden = !has;
     const opts = $("bg-image-opts");
     if (opts) opts.hidden = !has;
+    if (!has && bgCropEditing) setBgCropEditing(false);
+    const zoom = Math.max(0.1, Math.min(8, Number(cfg.pad_bg_image_zoom ?? 1)));
+    if (bgImageZoomInput && document.activeElement !== bgImageZoomInput) {
+      bgImageZoomInput.value = String(Math.round(zoom * 100));
+    }
+    if (btnBgCrop) btnBgCrop.disabled = !has;
+    document.querySelectorAll("[data-bg-crop-command]").forEach((button) => {
+      const command = button.getAttribute("data-bg-crop-command");
+      const active = zoom === 1 && (
+        (command === "fit" && cfg.pad_bg_image_size === "contain") ||
+        (command === "fill" && cfg.pad_bg_image_size === "cover")
+      );
+      button.classList.toggle("active", active);
+    });
   }
   if (btnBgImage) {
     btnBgImage.addEventListener("click", async () => {
@@ -2482,7 +2637,7 @@ updateTrailColorUi();
         if (data.cancelled) return;
         if (!res.ok || !data.ok) throw new Error(data.error || "bg image");
         if (data.data && data.data.pad_bg_image) {
-          queuePatch({ pad_bg_image: data.data.pad_bg_image });
+          queuePatch(data.data);
         }
       } catch (e) {
         toast(String(e.message || e) || "Image failed", "error");
@@ -2491,9 +2646,38 @@ updateTrailColorUi();
   }
   if (btnBgImageClear) {
     btnBgImageClear.addEventListener("click", () => {
-      queuePatch({ pad_bg_image: "" });
+      setBgCropEditing(false);
+      queuePatch({ pad_bg_image: "", pad_bg_image_enabled: false });
     });
   }
+  if (btnBgCrop) {
+    btnBgCrop.addEventListener("click", () => setBgCropEditing(!bgCropEditing));
+  }
+  if (bgImageZoomInput) {
+    const updateZoom = () => {
+      const percent = Number(bgImageZoomInput.value);
+      if (!Number.isFinite(percent)) return;
+      queuePatch({ pad_bg_image_zoom: Math.max(0.1, Math.min(8, percent / 100)) });
+    };
+    bgImageZoomInput.addEventListener("input", updateZoom);
+    bgImageZoomInput.addEventListener("change", updateZoom);
+  }
+  document.querySelectorAll("[data-bg-crop-command]").forEach((button) => {
+    button.addEventListener("click", () => {
+      sendBgCropCommand(button.getAttribute("data-bg-crop-command"));
+    });
+  });
+  window.addEventListener("message", (event) => {
+    if (!frame || event.source !== frame.contentWindow || event.origin !== location.origin) return;
+    if (event.data && event.data.type === "velo-bg-crop") {
+      const patch = event.data.data;
+      if (patch && typeof patch === "object") queuePatch(patch);
+      return;
+    }
+    if (event.data && event.data.type === "velo-bg-editor-close") {
+      setBgCropEditing(false);
+    }
+  });
 
   /* Preset hotkeys - dynamic from cfg.preset_hotkeys */
   const presetHotkeysEl = $("preset-hotkeys");

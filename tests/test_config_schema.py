@@ -44,6 +44,18 @@ def test_out_of_range_value_is_caught():
     assert "out of range" in errors[0]
 
 
+def test_stats_update_rate_accepts_hz_range():
+    assert validate_config({"stats_update_rate": 1}, strict=True) == []
+    assert validate_config({"stats_update_rate": 240}, strict=True) == []
+    assert validate_config({"stats_update_rate": 0}, strict=True)
+    assert validate_config({"stats_update_rate": 241}, strict=True)
+
+
+def test_hud_background_color_must_be_hex():
+    assert validate_config({"stats_bg_color": "#123456"}, strict=True) == []
+    assert validate_config({"stats_bg_color": "blue"}, strict=True)
+
+
 def test_float_range_validation():
     assert validate_config({"pad_bg_opacity": 1.5}, strict=True)
 
@@ -99,6 +111,21 @@ def test_duplicate_preset_hotkeys_are_rejected():
 def test_background_image_must_be_managed_asset():
     assert validate_config({"pad_bg_image": "https://example.test/a.png"}, strict=True)
     assert validate_config({"pad_bg_image": "/user-assets/background-abc.png"}, strict=True) == []
+
+
+def test_background_image_position_uses_pad_percent_bounds():
+    assert validate_config(
+        {"pad_bg_image_pos_x": 0.0, "pad_bg_image_pos_y": 100.0}, strict=True
+    ) == []
+    assert validate_config({"pad_bg_image_pos_x": -0.1}, strict=True)
+    assert validate_config({"pad_bg_image_pos_y": 100.1}, strict=True)
+
+
+def test_background_image_zoom_uses_safe_bounds():
+    assert validate_config({"pad_bg_image_zoom": 0.1}, strict=True) == []
+    assert validate_config({"pad_bg_image_zoom": 8.0}, strict=True) == []
+    assert validate_config({"pad_bg_image_zoom": 0.09}, strict=True)
+    assert validate_config({"pad_bg_image_zoom": 8.01}, strict=True)
 
 
 def test_validate_preset_name():

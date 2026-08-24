@@ -35,6 +35,7 @@ from velo.defaults import (
     REVERSE_SHARE_ALIASES,
     SHARE_ALIASES,
     SHELL_KEYS,
+    STATS_UPDATE_HZ,
 )
 
 __all__ = [
@@ -109,7 +110,15 @@ def _preset_file_for_name(name: str, directory: Optional[Path] = None) -> Path:
     return (directory or presets_dir()) / f"{_preset_stem(name)}.json"
 
 
-MAX_BACKGROUND_IMAGE_BYTES = 2 * 1024 * 1024
+def _normalize_legacy_stats_update_rate(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    hz = STATS_UPDATE_HZ.get(value.strip().lower())
+    return int(hz) if hz is not None else value
+
+
+MAX_BACKGROUND_IMAGE_MB = 100
+MAX_BACKGROUND_IMAGE_BYTES = MAX_BACKGROUND_IMAGE_MB * 1024 * 1024
 MAX_PRESET_CODE_BYTES = 1024 * 1024
 _IMAGE_FORMATS = {"PNG": "png", "JPEG": "jpg", "GIF": "gif", "WEBP": "webp"}
 
@@ -226,6 +235,11 @@ class ConfigStore:
             merged["update_check_mode"] = (
                 "off" if raw.get("check_for_updates") is False else "launch"
             )
+            dirty = True
+        legacy_stats_rate = raw.get("stats_update_rate")
+        stats_rate = _normalize_legacy_stats_update_rate(legacy_stats_rate)
+        if stats_rate != legacy_stats_rate:
+            merged["stats_update_rate"] = stats_rate
             dirty = True
         if merged.get("view_mode") == "wrap":
             merged["view_mode"] = "infinite"
@@ -402,7 +416,7 @@ class ConfigStore:
         except OSError as exc:
             raise ValueError(f"Could not read image: {exc}") from exc
         if size <= 0 or size > MAX_BACKGROUND_IMAGE_BYTES:
-            raise ValueError("Image too large (max 2 MB)")
+            raise ValueError(f"Image too large (max {MAX_BACKGROUND_IMAGE_MB} MB)")
         try:
             raw = path.read_bytes()
         except OSError as exc:
@@ -428,7 +442,7 @@ class ConfigStore:
 
     def _store_background_bytes_unlocked(self, raw: bytes) -> str:
         if not raw or len(raw) > MAX_BACKGROUND_IMAGE_BYTES:
-            raise ValueError("Image too large (max 2 MB)")
+            raise ValueError(f"Image too large (max {MAX_BACKGROUND_IMAGE_MB} MB)")
         try:
             from PIL import Image
 
@@ -896,7 +910,12 @@ class ConfigStore:
 
     @staticmethod
     def _apply_share_alias(settings: Dict[str, Any], alias: str, value: Any) -> None:
-        full_key = REVERSE_SHARE_ALIASES.get(alias)
+        # Older codes reused "tf" for fade style and target FPS. Its value type
+        # disambiguates those codes while new codes use a unique fade alias.
+        if alias == "tf" and isinstance(value, str):
+            full_key = "fade_style"
+        else:
+            full_key = REVERSE_SHARE_ALIASES.get(alias)
         if full_key is None:
             if "." in alias:
                 full_key = alias
@@ -1083,6 +1102,10 @@ class ConfigStore:
         patch = self._filter_bundle_config(cfg, include_connection)
         if not patch:
             raise ValueError("no recognized settings in file")
+        if "stats_update_rate" in patch:
+            patch["stats_update_rate"] = _normalize_legacy_stats_update_rate(
+                patch["stats_update_rate"]
+            )
         image_value = patch.get("pad_bg_image")
         if isinstance(image_value, str) and image_value.startswith("data:image/"):
             patch["pad_bg_image"] = self.store_background_data_url(image_value)

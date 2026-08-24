@@ -27,6 +27,6 @@ def sample_config_map() -> dict:
         "canvas_height": 360,
         "show_stats": False,
         "stats_dpi": 800,
-        "stats_update_rate": "normal",
+        "stats_update_rate": 24,
         "update_check_mode": "launch",
     }

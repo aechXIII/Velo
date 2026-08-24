@@ -63,6 +63,8 @@ class MouseEvent:
     wheel: float = 0.0
     button_event: Optional[str] = None
     source: str = "raw"
+    raw_dx: Optional[float] = None
+    raw_dy: Optional[float] = None
 
 
 Listener = Callable[[MouseEvent], None]
@@ -205,7 +207,14 @@ class MouseCapture:
         return 0.0
 
     def _emit_raw_move(
-        self, now: float, dx: float, dy: float, wheel: float, button_event: Optional[str]
+        self,
+        now: float,
+        dx: float,
+        dy: float,
+        wheel: float,
+        button_event: Optional[str],
+        raw_dx: float,
+        raw_dy: float,
     ) -> None:
         self._emit(
             MouseEvent(
@@ -216,6 +225,8 @@ class MouseCapture:
                 wheel=wheel,
                 button_event=button_event,
                 source="raw",
+                raw_dx=raw_dx,
+                raw_dy=raw_dy,
             )
         )
 
@@ -238,9 +249,9 @@ class MouseCapture:
 
         if mode == "relative" and is_relative and (dx != 0.0 or dy != 0.0):
             tdx, tdy = self._apply_transform(dx, dy)
-            self._emit_raw_move(now, tdx, tdy, wheel, button_event)
+            self._emit_raw_move(now, tdx, tdy, wheel, button_event, dx, dy)
         elif button_event or wheel:
-            self._emit_raw_move(now, 0.0, 0.0, wheel, button_event)
+            self._emit_raw_move(now, 0.0, 0.0, wheel, button_event, 0.0, 0.0)
 
     def _wnd_proc(self, hwnd, msg, wparam, lparam):
         if msg == WM_INPUT:
@@ -394,6 +405,7 @@ class MouseCapture:
                 now = time.perf_counter()
                 x, y = float(pt.x), float(pt.y)
                 dx = dy = 0.0
+                raw_dx = raw_dy = 0.0
                 first = self._last_abs is None
                 if not first:
                     lx, ly = self._last_abs  # type: ignore[misc]
@@ -412,6 +424,8 @@ class MouseCapture:
                         y=y,
                         buttons=dict(self._buttons),
                         source="absolute",
+                        raw_dx=raw_dx,
+                        raw_dy=raw_dy,
                     )
                 )
             time.sleep(1.0 / 250.0)

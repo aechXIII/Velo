@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import base64
 import json
+import zlib
+from types import SimpleNamespace
 
 import pytest
+from PIL import Image
 
 from velo.config import ConfigStore, config_dir, config_path, presets_dir
 
@@ -79,6 +82,28 @@ def test_config_store_export_is_safe_by_default(tmp_path):
     assert "auth_token" not in exported
 
 
+def test_new_config_uses_24_hz_hud_rate(tmp_path):
+    store = ConfigStore(path=tmp_path / "config.json", presets_path=tmp_path / "presets")
+
+    assert store.get("stats_update_rate") == 24
+
+
+def test_hud_background_color_is_saved(tmp_path):
+    store = ConfigStore(path=tmp_path / "config.json", presets_path=tmp_path / "presets")
+
+    store.update({"stats_bg_color": "#123456"}, persist=False)
+
+    assert store.get("stats_bg_color") == "#123456"
+
+
+def test_import_migrates_legacy_stats_update_rate(tmp_path):
+    store = ConfigStore(path=tmp_path / "config.json", presets_path=tmp_path / "presets")
+
+    store.import_bundle({"config": {"stats_update_rate": "fast"}})
+
+    assert store.get("stats_update_rate") == 10
+
+
 def test_malformed_config_is_quarantined_and_backup_is_restored(tmp_path):
     path = tmp_path / "config.json"
     backup_dir = tmp_path / "backups"
@@ -143,6 +168,81 @@ def test_config_store_rename_preset(tmp_path):
     assert "new-name" in user_names
 
 
+def test_preset_share_round_trips_background_presentation_settings(tmp_path):
+    store = ConfigStore(path=tmp_path / "config.json", presets_path=tmp_path / "presets")
+    store.update(
+        {
+            "pad_bg_image": "/user-assets/background-local.png",
+            "pad_bg_image_enabled": True,
+            "pad_bg_image_opacity": 0.42,
+            "pad_bg_image_size": "contain",
+            "pad_bg_image_zoom": 2.5,
+            "pad_bg_image_pos_x": 20.0,
+            "pad_bg_image_pos_y": 80.0,
+            "stats_bg_color": "#123456",
+            "stats_opacity": 0.35,
+            "stats_update_rate": 240,
+        },
+        persist=False,
+    )
+    store.save_user_preset("Presentation")
+
+    _, saved = store.get_preset_settings("Presentation", "user")
+    assert "pad_bg_image" not in saved
+    assert "stats_update_rate" not in saved
+
+    decoded = store.decode_preset_share(
+        store.encode_preset_share("Presentation", "user")
+    )["settings"]
+
+    assert decoded["pad_bg_image_enabled"] is True
+    assert decoded["pad_bg_image_opacity"] == 0.42
+    assert decoded["pad_bg_image_size"] == "contain"
+    assert decoded["pad_bg_image_zoom"] == 2.5
+    assert decoded["pad_bg_image_pos_x"] == 20.0
+    assert decoded["pad_bg_image_pos_y"] == 80.0
+    assert decoded["stats_bg_color"] == "#123456"
+    assert decoded["stats_opacity"] == 0.35
+
+
+def test_preset_saves_and_shares_hud_speed_chart_setting(tmp_path):
+    store = ConfigStore(path=tmp_path / "config.json", presets_path=tmp_path / "presets")
+    store.update({"hud_show_sparkline": False}, persist=False)
+    store.save_user_preset("HUD")
+
+    _, saved = store.get_preset_settings("HUD", "user")
+    decoded = store.decode_preset_share(store.encode_preset_share("HUD", "user"))[
+        "settings"
+    ]
+
+    assert saved["hud_show_sparkline"] is False
+    assert decoded["hud_show_sparkline"] is False
+
+
+def test_preset_share_round_trips_fade_style_and_target_fps(tmp_path):
+    store = ConfigStore(path=tmp_path / "config.json", presets_path=tmp_path / "presets")
+    store.update({"fade_style": "linear", "target_fps": 144}, persist=False)
+    store.save_user_preset("Timing")
+
+    decoded = store.decode_preset_share(
+        store.encode_preset_share("Timing", "user")
+    )["settings"]
+
+    assert decoded["fade_style"] == "linear"
+    assert decoded["target_fps"] == 144
+
+
+def test_preset_share_decodes_legacy_fade_style_alias(tmp_path):
+    store = ConfigStore(path=tmp_path / "config.json", presets_path=tmp_path / "presets")
+    payload = json.dumps({"v": 1, "n": "Legacy", "tf": "linear"}).encode("utf-8")
+    code = "VELO2." + base64.urlsafe_b64encode(zlib.compress(payload)).decode().rstrip("=")
+
+    decoded = store.decode_preset_share(code)["settings"]
+
+    assert decoded["fade_style"] == "linear"
+    assert decoded["target_fps"] == 60
+
+
 def test_config_store_apply_builtin_preset(tmp_path):
     store = ConfigStore(path=tmp_path / "config.json", presets_path=tmp_path / "presets")
     store.apply_preset("16:9 pad", kind="builtin")
@@ -179,10 +279,68 @@ def test_invalid_values_on_disk_fall_back_to_defaults(tmp_path):
     assert json.loads(path.read_text(encoding="utf-8"))["port"] == 27180
 
 
+@pytest.mark.parametrize(
+    ("legacy_rate", "expected_hz"),
+    [("slow", 2), ("normal", 4), ("fast", 10)],
+)
+def test_legacy_stats_update_rate_is_migrated(tmp_path, legacy_rate, expected_hz):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"stats_update_rate": legacy_rate}), encoding="utf-8")
+
+    store = ConfigStore(path=path, presets_path=tmp_path / "presets")
+
+    assert store.get("stats_update_rate") == expected_hz
+    assert json.loads(path.read_text(encoding="utf-8"))["stats_update_rate"] == expected_hz
+
+
 def test_invalid_bundle_is_rejected(tmp_path):
     store = ConfigStore(path=tmp_path / "config.json", presets_path=tmp_path / "presets")
     with pytest.raises(ValueError):
         store.import_bundle({"config": {"preset_hotkeys": "not-a-list"}})
+
+
+def test_background_image_accepts_files_larger_than_2_mb(tmp_path):
+    image_path = tmp_path / "background.png"
+    with Image.new("RGB", (1024, 1024), (1, 2, 3)) as image:
+        image.save(image_path, format="PNG", compress_level=0)
+    assert image_path.stat().st_size > 2 * 1024 * 1024
+    store = ConfigStore(path=tmp_path / "config.json", presets_path=tmp_path / "presets")
+
+    asset_url = store.store_background_image(image_path)
+
+    assert asset_url.startswith("/user-assets/background-")
+    assert list((tmp_path / "assets").glob("background-*.png"))
+
+
+@pytest.mark.parametrize(
+    ("reported_size", "accepted"),
+    [(100 * 1024 * 1024, True), ((100 * 1024 * 1024) + 1, False)],
+)
+def test_background_image_uses_100_mb_file_size_limit(
+    tmp_path, monkeypatch, reported_size, accepted
+):
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
+    image_path = tmp_path / "background.png"
+    image_path.write_bytes(png)
+    store = ConfigStore(path=tmp_path / "config.json", presets_path=tmp_path / "presets")
+    original_stat = type(image_path).stat
+
+    def stat_with_reported_size(path, *args, **kwargs):
+        if path == image_path:
+            return SimpleNamespace(st_size=reported_size)
+        return original_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(image_path), "stat", stat_with_reported_size)
+
+    if accepted:
+        assert store.store_background_image(image_path).startswith(
+            "/user-assets/background-"
+        )
+    else:
+        with pytest.raises(ValueError, match="max 100 MB"):
+            store.store_background_image(image_path)
 
 
 def test_background_data_url_is_externalized(tmp_path):

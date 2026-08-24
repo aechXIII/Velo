@@ -1,5 +1,20 @@
+  import {
+    calculateActualSizeZoom,
+    calculateBackgroundImageLayout,
+    calculatePositionNudge,
+  } from "./background_image_layout.js";
+  import { updateBackgroundCropSession } from "./background_crop_session.js";
+
   const pad = document.getElementById("pad");
   const padBg = document.getElementById("pad-bg");
+  const padBgImage = document.createElement("img");
+  padBgImage.id = "pad-bg-image";
+  padBgImage.className = "pad-bg-image";
+  padBgImage.alt = "";
+  padBgImage.draggable = false;
+  padBgImage.hidden = true;
+  padBg.appendChild(padBgImage);
+  const cropHint = document.getElementById("crop-hint");
   const padGrid = document.getElementById("pad-grid");
   const padGridPat = document.getElementById("pad-grid-pat");
   const padVignette = document.getElementById("pad-vignette");
@@ -94,6 +109,7 @@
     pad_bg_image_enabled: false,
     pad_bg_image_opacity: 1.0,
     pad_bg_image_size: "cover",
+    pad_bg_image_zoom: 1.0,
     pad_blur: false,
     pad_border_enabled: true,
     pad_border_color: "#ffffff",
@@ -124,6 +140,7 @@
     show_stats: false,
     stats_opacity: 0.55,
     stats_bg: true,
+    stats_bg_color: "#0a0b0f",
     stats_border: true,
     stats_x_pct: 2,
     stats_y_pct: 86,
@@ -179,6 +196,9 @@ chart_color: "#a677ff",
   let timeOrigin = null;
   let serverOrigin = null;
   let needsDraw = true;
+  let backgroundImageLayout = null;
+  let bgCropSession = { requested: false, imageAvailable: false, active: false };
+  let bgCropDrag = null;
 
   let hudDrag = null;
   let shiftHeld = false;
@@ -283,8 +303,54 @@ function fadeAlpha(age, life) {
     camY = camTy;
   }
 
+  function imageEnabled() {
+    return !!(cfg.pad_bg_image_enabled && cfg.pad_bg_image);
+  }
+
+  function applyBackgroundImageLayout() {
+    if (!imageEnabled()) {
+      backgroundImageLayout = null;
+      padBgImage.hidden = true;
+      return;
+    }
+
+    const src = String(cfg.pad_bg_image);
+    if (padBgImage.getAttribute("src") !== src) {
+      padBgImage.src = src;
+    }
+    padBgImage.hidden = false;
+    padBgImage.style.opacity = String(cfg.pad_bg_image_opacity ?? 1);
+    if (!padBgImage.complete || !padBgImage.naturalWidth || !padBgImage.naturalHeight) {
+      return;
+    }
+
+    const frameWidth = Math.max(1, pad.clientWidth);
+    const frameHeight = Math.max(1, pad.clientHeight);
+    backgroundImageLayout = calculateBackgroundImageLayout({
+      naturalWidth: padBgImage.naturalWidth,
+      naturalHeight: padBgImage.naturalHeight,
+      frameWidth,
+      frameHeight,
+      fit: cfg.pad_bg_image_size || "cover",
+      zoom: cfg.pad_bg_image_zoom ?? 1,
+      positionX: cfg.pad_bg_image_pos_x ?? 50,
+      positionY: cfg.pad_bg_image_pos_y ?? 50,
+    });
+    padBgImage.style.width = backgroundImageLayout.width + "px";
+    padBgImage.style.height = backgroundImageLayout.height + "px";
+    padBgImage.style.left = backgroundImageLayout.left + "px";
+    padBgImage.style.top = backgroundImageLayout.top + "px";
+  }
+
+  padBgImage.addEventListener("load", applyBackgroundImageLayout);
+  padBgImage.addEventListener("error", () => {
+    backgroundImageLayout = null;
+    padBgImage.hidden = true;
+  });
+
   function applyPadLayout() {
     if (!cfg.pad_enabled) {
+      if (bgCropSession.requested) setBackgroundCropEditing(false);
       pad.style.display = "none";
       return;
     }
@@ -299,8 +365,12 @@ function fadeAlpha(age, life) {
     pad.style.top = y + "%";
     pad.style.transform = "translate(-50%, -50%)";
 
+    const hasImage = imageEnabled();
+    updateBackgroundCropImageAvailability(hasImage);
     const shape = cfg.pad_shape || "rounded";
     pad.className = "pad shape-" + shape;
+    if (bgCropSession.active) pad.classList.add("crop-editing");
+    if (bgCropDrag) pad.classList.add("crop-dragging");
     if (!cfg.pad_bg_enabled) pad.classList.add("no-bg");
     if (!cfg.pad_border_enabled) pad.classList.add("no-border");
     if (!cfg.pad_shadow) pad.classList.add("no-shadow");
@@ -322,34 +392,16 @@ function fadeAlpha(age, life) {
 
     const bw = Math.max(0.5, Number(cfg.pad_border_width) || 1.5);
 
-    const hasImage = cfg.pad_bg_image_enabled && cfg.pad_bg_image;
     const showBg = cfg.pad_bg_enabled || cfg.pad_glow_enabled || hasImage;
     if (cfg.pad_bg_enabled) {
       padBg.style.background = rgba(hexToRgb(cfg.pad_bg_color || "#0a0a0a"), Number(cfg.pad_bg_opacity) ?? 0.72);
-      if (hasImage) {
-        padBg.style.backgroundImage = "url(" + cfg.pad_bg_image + ")";
-        padBg.style.backgroundSize = cfg.pad_bg_image_size || "cover";
-        padBg.style.backgroundPosition = ((cfg.pad_bg_image_pos_x || 50) + "% " + (cfg.pad_bg_image_pos_y || 50) + "%");
-        padBg.style.backgroundRepeat = "no-repeat";
-        padBg.style.opacity = String(cfg.pad_bg_image_opacity ?? 1.0);
-      } else {
-        padBg.style.backgroundImage = "";
-        padBg.style.backgroundSize = "";
-        padBg.style.backgroundPosition = "";
-        padBg.style.backgroundRepeat = "";
-        padBg.style.opacity = "1";
-      }
     } else if (hasImage) {
-      padBg.style.background = "none";
-      padBg.style.backgroundImage = "url(" + cfg.pad_bg_image + ")";
-      padBg.style.backgroundSize = cfg.pad_bg_image_size || "cover";
-      padBg.style.backgroundPosition = ((cfg.pad_bg_image_pos_x || 50) + "% " + (cfg.pad_bg_image_pos_y || 50) + "%");
-      padBg.style.backgroundRepeat = "no-repeat";
-      padBg.style.opacity = String(cfg.pad_bg_image_opacity ?? 0.8);
+      padBg.style.background = "transparent";
     } else {
       padBg.style.background = "transparent";
-      padBg.style.backgroundImage = "";
     }
+    padBg.style.backgroundImage = "none";
+    padBg.style.opacity = "1";
     padBg.hidden = !showBg;
 
     padBg.style.border = "none";
@@ -358,6 +410,7 @@ function fadeAlpha(age, life) {
     padBg.style.bottom = "0";
     padBg.style.left = "0";
     padBg.style.borderRadius = br;
+    applyBackgroundImageLayout();
 
     const shadows = [];
 
@@ -467,7 +520,7 @@ function fadeAlpha(age, life) {
     statsEl.classList.toggle("hidden", !on);
     if (!on) return;
 
-    statsEl.style.opacity = String(cfg.stats_opacity ?? 0.55);
+    statsEl.style.removeProperty("opacity");
 
     const bg = truthyFlag(cfg.stats_bg, true);
     const border = truthyFlag(cfg.stats_border, true);
@@ -476,8 +529,10 @@ function fadeAlpha(age, life) {
     statsEl.classList.toggle("bare", !bg && !border);
 
     if (bg) {
+      const backgroundColor = hexToRgb(cfg.stats_bg_color || "#0a0b0f");
+      const backgroundOpacity = Math.max(0, Math.min(1, Number(cfg.stats_opacity ?? 0.55)));
       statsEl.style.removeProperty("background");
-      statsEl.style.removeProperty("background-color");
+      statsEl.style.setProperty("background-color", rgba(backgroundColor, backgroundOpacity), "important");
       statsEl.style.removeProperty("backdrop-filter");
       statsEl.style.removeProperty("-webkit-backdrop-filter");
     } else {
@@ -1304,6 +1359,166 @@ function fadeAlpha(age, life) {
     }
   }
 
+  function clampCropValue(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function emitBackgroundCropPatch(patch) {
+    Object.assign(cfg, patch);
+    applyPadLayout();
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: "velo-bg-crop", data: patch }, location.origin);
+    }
+  }
+
+  function syncBackgroundCropEditingUi() {
+    const active = bgCropSession.active;
+    bgCropDrag = null;
+    pad.classList.toggle("crop-editing", active);
+    pad.classList.remove("crop-dragging");
+    cropHint.hidden = !active;
+    if (active) {
+      pad.tabIndex = 0;
+      pad.focus({ preventScroll: true });
+    } else {
+      pad.removeAttribute("tabindex");
+    }
+  }
+
+  function setBackgroundCropEditing(enabled) {
+    bgCropSession = updateBackgroundCropSession(bgCropSession, {
+      type: "request",
+      enabled,
+    });
+    syncBackgroundCropEditingUi();
+  }
+
+  function updateBackgroundCropImageAvailability(available) {
+    const wasActive = bgCropSession.active;
+    bgCropSession = updateBackgroundCropSession(bgCropSession, {
+      type: "image",
+      available,
+    });
+    if (bgCropSession.active !== wasActive) syncBackgroundCropEditingUi();
+  }
+
+  function runBackgroundCropCommand(command) {
+    if (command === "fit") {
+      emitBackgroundCropPatch({
+        pad_bg_image_size: "contain",
+        pad_bg_image_zoom: 1,
+        pad_bg_image_pos_x: 50,
+        pad_bg_image_pos_y: 50,
+      });
+      return;
+    }
+    if (command === "fill") {
+      emitBackgroundCropPatch({
+        pad_bg_image_size: "cover",
+        pad_bg_image_zoom: 1,
+        pad_bg_image_pos_x: 50,
+        pad_bg_image_pos_y: 50,
+      });
+      return;
+    }
+    if (command === "center") {
+      emitBackgroundCropPatch({ pad_bg_image_pos_x: 50, pad_bg_image_pos_y: 50 });
+      return;
+    }
+    if (command === "actual" && padBgImage.naturalWidth && padBgImage.naturalHeight) {
+      const zoom = calculateActualSizeZoom({
+        naturalWidth: padBgImage.naturalWidth,
+        naturalHeight: padBgImage.naturalHeight,
+        frameWidth: Math.max(1, pad.clientWidth),
+        frameHeight: Math.max(1, pad.clientHeight),
+        fit: "cover",
+      });
+      emitBackgroundCropPatch({
+        pad_bg_image_size: "cover",
+        pad_bg_image_zoom: Math.round(clampCropValue(zoom, 0.1, 8) * 1000) / 1000,
+      });
+    }
+  }
+
+  pad.addEventListener("pointerdown", (event) => {
+    if (!bgCropSession.active || event.button !== 0 || !backgroundImageLayout) return;
+    event.preventDefault();
+    pad.focus({ preventScroll: true });
+    bgCropDrag = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startPositionX: Number(cfg.pad_bg_image_pos_x ?? 50),
+      startPositionY: Number(cfg.pad_bg_image_pos_y ?? 50),
+      rangeX: pad.clientWidth - backgroundImageLayout.width,
+      rangeY: pad.clientHeight - backgroundImageLayout.height,
+    };
+    pad.classList.add("crop-dragging");
+    pad.setPointerCapture(event.pointerId);
+  });
+
+  pad.addEventListener("pointermove", (event) => {
+    if (!bgCropDrag || event.pointerId !== bgCropDrag.pointerId) return;
+    const patch = {};
+    if (Math.abs(bgCropDrag.rangeX) > 0.5) {
+      patch.pad_bg_image_pos_x = Math.round(
+        clampCropValue(
+          bgCropDrag.startPositionX + ((event.clientX - bgCropDrag.startX) / bgCropDrag.rangeX) * 100,
+          0,
+          100,
+        ) * 100,
+      ) / 100;
+    }
+    if (Math.abs(bgCropDrag.rangeY) > 0.5) {
+      patch.pad_bg_image_pos_y = Math.round(
+        clampCropValue(
+          bgCropDrag.startPositionY + ((event.clientY - bgCropDrag.startY) / bgCropDrag.rangeY) * 100,
+          0,
+          100,
+        ) * 100,
+      ) / 100;
+    }
+    if (Object.keys(patch).length) emitBackgroundCropPatch(patch);
+  });
+
+  function finishBackgroundCropDrag(event) {
+    if (!bgCropDrag || (event && event.pointerId !== bgCropDrag.pointerId)) return;
+    try { pad.releasePointerCapture(bgCropDrag.pointerId); } catch (_) {}
+    bgCropDrag = null;
+    pad.classList.remove("crop-dragging");
+  }
+
+  pad.addEventListener("pointerup", finishBackgroundCropDrag);
+  pad.addEventListener("pointercancel", finishBackgroundCropDrag);
+  pad.addEventListener("wheel", (event) => {
+    if (!bgCropSession.active) return;
+    event.preventDefault();
+    const current = Number(cfg.pad_bg_image_zoom ?? 1);
+    const next = clampCropValue(current * Math.exp(-event.deltaY * 0.0015), 0.1, 8);
+    emitBackgroundCropPatch({ pad_bg_image_zoom: Math.round(next * 1000) / 1000 });
+  }, { passive: false });
+
+  pad.addEventListener("keydown", (event) => {
+    if (!bgCropSession.active) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setBackgroundCropEditing(false);
+      if (window.parent !== window) {
+        window.parent.postMessage({ type: "velo-bg-editor-close" }, location.origin);
+      }
+      return;
+    }
+    const step = event.shiftKey ? 5 : 1;
+    const patch = {};
+    if (event.key === "ArrowLeft") patch.pad_bg_image_pos_x = calculatePositionNudge(cfg.pad_bg_image_pos_x ?? 50, pad.clientWidth, backgroundImageLayout?.width, -1, step);
+    if (event.key === "ArrowRight") patch.pad_bg_image_pos_x = calculatePositionNudge(cfg.pad_bg_image_pos_x ?? 50, pad.clientWidth, backgroundImageLayout?.width, 1, step);
+    if (event.key === "ArrowUp") patch.pad_bg_image_pos_y = calculatePositionNudge(cfg.pad_bg_image_pos_y ?? 50, pad.clientHeight, backgroundImageLayout?.height, -1, step);
+    if (event.key === "ArrowDown") patch.pad_bg_image_pos_y = calculatePositionNudge(cfg.pad_bg_image_pos_y ?? 50, pad.clientHeight, backgroundImageLayout?.height, 1, step);
+    if (!Object.keys(patch).length) return;
+    event.preventDefault();
+    emitBackgroundCropPatch(patch);
+  });
+
   window.addEventListener("resize", () => {
     applyPadLayout();
     placeStatsPanel();
@@ -1312,6 +1527,7 @@ function fadeAlpha(age, life) {
   if (typeof ResizeObserver !== "undefined") {
     new ResizeObserver(() => {
       resizeCanvas();
+      applyBackgroundImageLayout();
       needsDraw = true;
     }).observe(pad);
   }
@@ -1329,8 +1545,17 @@ function fadeAlpha(age, life) {
   requestAnimationFrame(frame);
 
   window.addEventListener("message", (e) => {
-    if (!e.data || e.data.type !== "velo-patch") return;
+    if (!e.data || (window.parent !== window && e.source !== window.parent)) return;
     try {
+      if (e.data.type === "velo-bg-editor") {
+        setBackgroundCropEditing(e.data.enabled);
+        return;
+      }
+      if (e.data.type === "velo-bg-command") {
+        runBackgroundCropCommand(e.data.command);
+        return;
+      }
+      if (e.data.type !== "velo-patch") return;
       const patch = e.data.data;
       if (!patch || typeof patch !== "object") return;
       Object.assign(cfg, patch);

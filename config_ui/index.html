@@ -209,22 +209,31 @@
 
             <hr>
             <h3 class="sub-sec">Image</h3>
-            <div class="field">
+            <div class="image-source-actions">
               <button type="button" class="btn btn-block btn-ghost" id="btn-bg-image">Choose image...</button>
               <button type="button" class="btn btn-sm btn-ghost" id="btn-bg-image-clear" hidden>Clear</button>
             </div>
             <div id="bg-image-opts" hidden>
+              <button type="button" class="btn btn-block btn-ghost crop-edit-btn" id="btn-bg-crop" aria-pressed="false">Adjust crop in preview</button>
+              <div class="slider crop-zoom" data-slider>
+                <div class="slider-h">
+                  <span>Zoom</span>
+                  <label class="zoom-value" aria-label="Image zoom percent">
+                    <input id="bg-image-zoom-input" type="number" min="10" max="800" step="5" value="100" />
+                    <span>%</span>
+                  </label>
+                </div>
+                <input type="range" data-key="pad_bg_image_zoom" min="0.1" max="8" step="0.05" aria-label="Image zoom" />
+              </div>
+              <div class="crop-actions" role="group" aria-label="Image crop presets">
+                <button type="button" class="btn btn-sm btn-ghost" data-bg-crop-command="fit">Fit</button>
+                <button type="button" class="btn btn-sm btn-ghost" data-bg-crop-command="fill">Fill</button>
+                <button type="button" class="btn btn-sm btn-ghost" data-bg-crop-command="actual">1:1</button>
+                <button type="button" class="btn btn-sm btn-ghost" data-bg-crop-command="center">Center</button>
+              </div>
               <div class="slider" data-slider>
                 <div class="slider-h"><span>Opacity</span><input type="number" class="val-input" data-link="pad_bg_image_opacity" step="0.01" /></div>
                 <input type="range" data-key="pad_bg_image_opacity" min="0" max="1" step="0.01" />
-              </div>
-              <div class="field">
-                <label>Sizing</label>
-                <select data-key="pad_bg_image_size">
-                  <option value="cover">Cover</option>
-                  <option value="contain">Contain</option>
-                  <option value="100% 100%">Fill (stretch)</option>
-                </select>
               </div>
             </div>
 
@@ -613,6 +622,19 @@
                 </label>
               </div>
             </div>
+            <div id="hud-background-options">
+              <div class="field">
+                <label for="stats-bg-color">Background color</label>
+                <input id="stats-bg-color" type="color" data-key="stats_bg_color" />
+              </div>
+              <div class="slider" data-slider>
+                <div class="slider-h">
+                  <label for="stats-bg-opacity-input">Background opacity</label>
+                  <input id="stats-bg-opacity-input" type="number" class="val-input" data-link="stats_opacity" min="0" max="1" step="0.01" />
+                </div>
+                <input type="range" data-key="stats_opacity" min="0" max="1" step="0.01" aria-label="Background opacity" />
+              </div>
+            </div>
             <h3 class="subhead">Metrics</h3>
             <div class="checks">
               <div class="toggle-row">
@@ -677,16 +699,13 @@
                 <option value="raw">Raw counts</option>
               </select>
             </div>
-            <div class="field">
-              <label>
-                Update rate
-                <span class="info" tabindex="0" data-tip="How often HUD numbers refresh.">i</span>
-              </label>
-              <select data-key="stats_update_rate">
-                <option value="slow">Slow</option>
-                <option value="normal" selected>Normal</option>
-                <option value="fast">Fast</option>
-              </select>
+            <div class="slider" data-slider>
+              <div class="slider-h">
+                <label for="stats-update-rate-input">HUD update rate (Hz)</label>
+                <input id="stats-update-rate-input" type="number" class="val-input" data-link="stats_update_rate" min="1" max="240" step="1" aria-describedby="stats-update-rate-note" />
+              </div>
+              <input type="range" data-key="stats_update_rate" min="1" max="240" step="1" aria-label="HUD update rate (Hz)" aria-describedby="stats-update-rate-note" />
+              <p class="note" id="stats-update-rate-note">Higher values might lower FPS because of more CPU work.</p>
             </div>
             <h3 class="subhead">Position</h3>
             <div class="slider" data-slider>
@@ -708,13 +727,6 @@
               <button type="button" class="btn btn-sm btn-ghost" data-hud-corner="tr">Top right</button>
               <button type="button" class="btn btn-sm btn-ghost" data-hud-corner="bl">Bottom left</button>
               <button type="button" class="btn btn-sm btn-ghost" data-hud-corner="br">Bottom right</button>
-            </div>
-            <div class="slider" data-slider>
-              <div class="slider-h">
-                <span>Opacity</span>
-                <input type="number" class="val-input" data-link="stats_opacity" step="0.01" />
-              </div>
-              <input type="range" data-key="stats_opacity" min="0.15" max="1" step="0.01" />
             </div>
             <button type="button" class="btn btn-block btn-ghost" id="btn-stats-reset">Reset session stats</button>
           </section>

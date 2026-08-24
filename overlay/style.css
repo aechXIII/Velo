@@ -48,6 +48,49 @@ body {
   border: none;
   box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.1);
   transition: background 0.2s ease, box-shadow 0.2s ease, border-radius 0.2s ease;
+  overflow: hidden;
+}
+
+.pad-bg-image {
+  position: absolute;
+  display: block;
+  max-width: none;
+  max-height: none;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  will-change: left, top, width, height;
+}
+
+.pad-bg-image[hidden] {
+  display: none;
+}
+
+.pad.crop-editing {
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+}
+
+.pad.crop-editing.crop-dragging {
+  cursor: grabbing;
+}
+
+.crop-hint {
+  position: absolute;
+  z-index: 7;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: rgba(15, 15, 17, 0.92);
+  color: #f4f4f5;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .pad.shape-rect .pad-bg,

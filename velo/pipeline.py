@@ -8,15 +8,18 @@ import threading
 import time
 from typing import Any, Dict, Optional, Tuple
 
+from velo._win32 import HighResolutionWaiter
 from velo.config import ConfigStore
 from velo.constants import (
     IDLE_DECAY_FACTOR,
     IDLE_THRESHOLD,
-    MIN_MOVE_DISTANCE,
+    MAX_STATS_UPDATE_HZ,
+    MIN_STATS_UPDATE_HZ,
     SMOOTHING_WEIGHT_NEW,
     SMOOTHING_WEIGHT_OLD,
+    SPEED_SAMPLE_INTERVAL,
 )
-from velo.defaults import STATS_UPDATE_HZ
+from velo.defaults import DEFAULTS
 from velo.error_handling import safe_thread
 from velo.mouse_capture import MouseCapture, MouseEvent
 from velo.server import VeloServer
@@ -42,10 +45,14 @@ class EventPipeline:
         }
         self._click_times: list = []
         self._last_t: Optional[float] = None
+        self._speed_sample_t: Optional[float] = None
+        self._speed_sample_distance = 0.0
         self._stats_thread: Optional[threading.Thread] = None
         self._move_thread: Optional[threading.Thread] = None
         self._event_thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
+        self._stats_waiter_lock = threading.Lock()
+        self._stats_waiter: Optional[HighResolutionWaiter] = None
         self._ev_q: queue.SimpleQueue = queue.SimpleQueue()
         self._last_move_emit = 0.0
         self._acc_dx = 0.0
@@ -80,6 +87,9 @@ class EventPipeline:
 
     def stop(self) -> None:
         self._stop.set()
+        with self._stats_waiter_lock:
+            if self._stats_waiter is not None:
+                self._stats_waiter.stop()
         self.capture.remove_listener(self._enqueue_mouse)
         self.capture.stop()
         self._flush_pending_move(force=True)
@@ -101,9 +111,8 @@ class EventPipeline:
         hz = max(30.0, min(hz, 240.0))
         self._min_move_interval = 1.0 / hz
 
-        rate = str(snap.get("stats_update_rate") or "normal").strip().lower()
-        stats_hz = float(STATS_UPDATE_HZ.get(rate, STATS_UPDATE_HZ["normal"]))
-        stats_hz = max(1.0, min(stats_hz, 30.0))
+        stats_hz = float(snap.get("stats_update_rate") or DEFAULTS["stats_update_rate"])
+        stats_hz = max(MIN_STATS_UPDATE_HZ, min(stats_hz, MAX_STATS_UPDATE_HZ))
         self._stats_interval = 1.0 / stats_hz
 
     def stats_snapshot(self) -> Dict[str, Any]:
@@ -121,6 +130,8 @@ class EventPipeline:
             }
             self._click_times = []
             self._last_t = None
+            self._speed_sample_t = None
+            self._speed_sample_distance = 0.0
             snap = dict(self._stats)
         if self.server.client_count:
             self.server.broadcast_mouse({"type": "stats", "data": snap})
@@ -146,14 +157,22 @@ class EventPipeline:
 
     def _update_motion_stats_unlocked(self, dist: float, now: float) -> None:
         self._stats["distance"] += dist
-        if self._last_t is not None:
-            dt = now - self._last_t
-            if dt > 1e-6:
-                speed = dist / dt
-                prev = self._stats["speed"]
-                self._stats["speed"] = prev * SMOOTHING_WEIGHT_NEW + speed * SMOOTHING_WEIGHT_OLD
-                if speed > self._stats["peak_speed"]:
-                    self._stats["peak_speed"] = speed
+        if self._speed_sample_t is None:
+            self._speed_sample_t = now
+        else:
+            dt = now - self._speed_sample_t
+            if dt > IDLE_THRESHOLD:
+                self._speed_sample_t = now
+                self._speed_sample_distance = 0.0
+            else:
+                self._speed_sample_distance += dist
+                if dt >= SPEED_SAMPLE_INTERVAL:
+                    speed = self._speed_sample_distance / dt
+                    prev = self._stats["speed"]
+                    self._stats["speed"] = prev * SMOOTHING_WEIGHT_NEW + speed * SMOOTHING_WEIGHT_OLD
+                    self._stats["peak_speed"] = max(self._stats["peak_speed"], speed)
+                    self._speed_sample_t = now
+                    self._speed_sample_distance = 0.0
         self._last_t = now
 
     def _update_click_stats_unlocked(self, now: float) -> None:
@@ -169,6 +188,8 @@ class EventPipeline:
                 self._update_motion_stats_unlocked(dist, now)
             elif ev.x is not None:
                 self._last_t = now
+                if self._speed_sample_t is None:
+                    self._speed_sample_t = now
             if ev.button_event and ev.button_event.endswith("_down"):
                 self._update_click_stats_unlocked(now)
 
@@ -213,7 +234,9 @@ class EventPipeline:
         now = ev.t
         dx = float(ev.dx)
         dy = float(ev.dy)
-        dist = math.hypot(dx, dy)
+        stats_dx = dx if ev.raw_dx is None else float(ev.raw_dx)
+        stats_dy = dy if ev.raw_dy is None else float(ev.raw_dy)
+        dist = math.hypot(stats_dx, stats_dy)
 
         self._update_stats_for_event(ev, dist, now)
 
@@ -283,15 +306,35 @@ class EventPipeline:
 
     @safe_thread("stats")
     def _stats_loop(self) -> None:
-        while not self._stop.is_set():
-            interval = max(MIN_MOVE_DISTANCE, float(self._stats_interval or IDLE_THRESHOLD))
-            if self._stop.wait(interval):
-                break
-            with self._lock:
-                if self._last_t is not None and (time.perf_counter() - self._last_t) > IDLE_DECAY_FACTOR:
-                    self._stats["speed"] *= 0.5
-                    if self._stats["speed"] < 1:
-                        self._stats["speed"] = 0.0
-                stats = dict(self._stats)
-            if self.server.client_count:
-                self.server.broadcast_mouse({"type": "stats", "data": stats})
+        waiter = HighResolutionWaiter()
+        try:
+            with self._stats_waiter_lock:
+                self._stats_waiter = waiter
+                if self._stop.is_set():
+                    waiter.stop()
+
+            deadline = time.perf_counter()
+            while not self._stop.is_set():
+                interval = max(
+                    1.0 / MAX_STATS_UPDATE_HZ,
+                    float(self._stats_interval or IDLE_THRESHOLD),
+                )
+                now = time.perf_counter()
+                deadline += interval
+                if deadline <= now:
+                    deadline = now + interval
+                if waiter.wait(deadline - now):
+                    break
+                with self._lock:
+                    if self._last_t is not None and (time.perf_counter() - self._last_t) > IDLE_DECAY_FACTOR:
+                        self._stats["speed"] *= 0.5
+                        if self._stats["speed"] < 1:
+                            self._stats["speed"] = 0.0
+                    stats = dict(self._stats)
+                if self.server.client_count:
+                    self.server.broadcast_mouse({"type": "stats", "data": stats})
+        finally:
+            with self._stats_waiter_lock:
+                if self._stats_waiter is waiter:
+                    self._stats_waiter = None
+            waiter.close()

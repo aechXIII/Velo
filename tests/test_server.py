@@ -222,6 +222,45 @@ class TestVeloServer:
         finally:
             server.stop()
 
+    def test_choosing_background_image_enables_it(self, tmp_path, monkeypatch):
+        from PIL import Image
+
+        from velo.config import ConfigStore
+        from velo.server import VeloServer
+
+        image_path = tmp_path / "background.gif"
+        with Image.new("RGB", (2, 2), "red") as image:
+            image.save(image_path, format="GIF")
+        monkeypatch.setattr(
+            "velo.server.open_image_dialog", lambda _title: str(image_path)
+        )
+        config = ConfigStore(
+            path=tmp_path / "config.json", presets_path=tmp_path / "presets"
+        )
+        config.update(
+            {"host": "127.0.0.1", "port": _free_port(), "auth_enabled": False},
+            persist=False,
+        )
+        server = VeloServer(config)
+        server.start()
+        try:
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{_get_bound_port(server)}/api/config/bg-image-dialog",
+                data=b"",
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                data = json.loads(response.read().decode("utf-8"))
+
+            assert data["data"]["pad_bg_image_enabled"] is True
+            assert data["data"]["pad_bg_image_zoom"] == 1.0
+            assert data["data"]["pad_bg_image_pos_x"] == 50.0
+            assert data["data"]["pad_bg_image_pos_y"] == 50.0
+            assert config.get("pad_bg_image_enabled") is True
+            assert config.get("pad_bg_image") == data["data"]["pad_bg_image"]
+        finally:
+            server.stop()
+
     def test_onboarding_endpoint_requires_auth(self, tmp_path):
         from velo.config import ConfigStore
         from velo.server import VeloServer

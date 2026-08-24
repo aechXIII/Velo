@@ -28,7 +28,6 @@ PRESET_EXCLUDE = frozenset(
         "stats_dpi",
         "stats_update_rate",
         "show_onboarding",
-        "hud_show_sparkline",
         "accent_color",
         "bg_color",
         "hidden_presets",
@@ -375,6 +374,7 @@ DEFAULTS: Dict[str, Any] = {
     "show_stats": False,
     "stats_opacity": 0.55,
     "stats_bg": True,
+    "stats_bg_color": "#0a0b0f",
     "stats_border": True,
     "stats_x_pct": 0.0,
     "stats_y_pct": 100.0,
@@ -385,7 +385,7 @@ DEFAULTS: Dict[str, Any] = {
     "stats_show_distance": True,
     "stats_units": "cm",
     "stats_dpi": 800,
-    "stats_update_rate": "normal",
+    "stats_update_rate": 24,
     "stats_reset_hotkey": "",
     "start_minimized": False,
     "open_settings_on_start": True,
@@ -408,6 +408,9 @@ DEFAULTS: Dict[str, Any] = {
     "pad_bg_image_enabled": False,
     "pad_bg_image_opacity": 1.0,
     "pad_bg_image_size": "cover",
+    "pad_bg_image_zoom": 1.0,
+    "pad_bg_image_pos_x": 50.0,
+    "pad_bg_image_pos_y": 50.0,
     "preset_hotkeys": [],
 }
 
@@ -429,7 +432,7 @@ SHARE_ALIASES: Dict[str, Any] = {
     "trail_smoothing": "ts",
     "trail_curve": "tk",
     "trail_samples": "tn",
-    "fade_style": "tf",
+    "fade_style": "tfs",
     "trail_color": "tc",
     "speed_colorize": "tz",
     "speed_max": "smx",
@@ -467,6 +470,14 @@ SHARE_ALIASES: Dict[str, Any] = {
     "pad_vignette_opacity": "pvo",
     "pad_clip_trail": "pct",
 
+    # Background image presentation (the local image path is never shared)
+    "pad_bg_image_enabled": "pbie",
+    "pad_bg_image_opacity": "pbio",
+    "pad_bg_image_size": "pbis",
+    "pad_bg_image_zoom": "pbiz",
+    "pad_bg_image_pos_x": "pbix",
+    "pad_bg_image_pos_y": "pbiy",
+
     # Pad glow
     "pad_glow_enabled": "pge",
     "pad_glow_color": "pgc2",
@@ -490,6 +501,7 @@ SHARE_ALIASES: Dict[str, Any] = {
     "show_stats": "ss",
     "stats_opacity": "so",
     "stats_bg": "sbg",
+    "stats_bg_color": "sbgc",
     "stats_border": "sbr",
     "stats_show_speed": "ssv",
     "stats_show_peak": "ssp",
@@ -500,6 +512,7 @@ SHARE_ALIASES: Dict[str, Any] = {
     "stats_x_pct": "sxp",
     "stats_y_pct": "syp",
     "hud_show_avg_speed": "has",
+    "hud_show_sparkline": "hss",
     "chart_color": "chcl",
 
     # Canvas / source

@@ -10,6 +10,7 @@ from velo.defaults import (
     PRESET_EXCLUDE,
     PRESETS,
     QUALITY_PRESETS,
+    SHARE_ALIASES,
     SHELL_KEYS,
     STATS_UPDATE_HZ,
 )
@@ -91,3 +92,26 @@ def test_stats_update_hz_has_expected_rates():
     assert "fast" in STATS_UPDATE_HZ
     for rate in STATS_UPDATE_HZ.values():
         assert rate > 0
+
+
+def test_preset_share_aliases_are_unique():
+    aliases = list(SHARE_ALIASES.values())
+
+    assert len(aliases) == len(set(aliases))
+
+
+def test_every_preset_setting_has_a_share_alias():
+    missing = []
+    for key, value in DEFAULTS.items():
+        if key in PRESET_EXCLUDE:
+            continue
+        if isinstance(value, dict):
+            missing.extend(
+                f"{key}|{subkey}"
+                for subkey in value
+                if f"{key}|{subkey}" not in SHARE_ALIASES
+            )
+        elif key not in SHARE_ALIASES:
+            missing.append(key)
+
+    assert missing == []

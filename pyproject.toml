@@ -1,6 +1,6 @@
 [project]
 name = "velo"
-version = "2.3.1"
+version = "2.3.2"
 description = "Mouse Input overlay for OBS. Made for aim trainers and FPS games."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -22,7 +22,7 @@ dev = [
 ]
 
 [tool.bumpversion]
-current_version = "2.3.1"
+current_version = "2.3.2"
 commit = false
 tag = false
 allow_dirty = true

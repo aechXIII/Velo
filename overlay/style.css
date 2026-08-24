@@ -53,6 +53,7 @@ body {
 
 .pad-bg-image {
   position: absolute;
+  z-index: 0;
   display: block;
   max-width: none;
   max-height: none;
@@ -64,6 +65,13 @@ body {
 
 .pad-bg-image[hidden] {
   display: none;
+}
+
+.pad-bg-effects {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
 }
 
 .pad.crop-editing {

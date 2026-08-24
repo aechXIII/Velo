@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.3.3] - 2026-08-25
+
+### Fixed
+- Border glow hidden behind full opacity background image
+
 ## [2.3.2] - 2026-08-24
 
 ### Added

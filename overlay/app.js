@@ -14,6 +14,10 @@
   padBgImage.draggable = false;
   padBgImage.hidden = true;
   padBg.appendChild(padBgImage);
+  const padBgEffects = document.createElement("div");
+  padBgEffects.className = "pad-bg-effects";
+  padBgEffects.setAttribute("aria-hidden", "true");
+  padBg.appendChild(padBgEffects);
   const cropHint = document.getElementById("crop-hint");
   const padGrid = document.getElementById("pad-grid");
   const padGridPat = document.getElementById("pad-grid-pat");
@@ -412,25 +416,28 @@ function fadeAlpha(age, life) {
     padBg.style.borderRadius = br;
     applyBackgroundImageLayout();
 
-    const shadows = [];
+    const foregroundShadows = [];
 
     if (cfg.pad_border_enabled) {
       const bc = rgba(hexToRgb(cfg.pad_border_color || "#ffffff"), Number(cfg.pad_border_opacity) ?? 0.12);
-      shadows.push(`inset 0 0 0 ${bw}px ${bc}`);
+      foregroundShadows.push(`inset 0 0 0 ${bw}px ${bc}`);
     }
 
     if (cfg.pad_glow_enabled) {
       const glowBlur = Number(cfg.pad_glow_blur) || 24;
       const glowColor = cfg.pad_glow_color || "#ffffff";
       const glowOpacity = Number(cfg.pad_glow_opacity) ?? 0.5;
-      shadows.push(`inset 0 0 ${glowBlur}px ${rgba(hexToRgb(glowColor), glowOpacity)}`);
+      foregroundShadows.push(`inset 0 0 ${glowBlur}px ${rgba(hexToRgb(glowColor), glowOpacity)}`);
     }
+
+    padBgEffects.style.boxShadow = foregroundShadows.length ? foregroundShadows.join(", ") : "none";
 
     if (cfg.pad_shadow && cfg.pad_bg_enabled) {
       const so = Number(cfg.pad_shadow_opacity) ?? 0.4;
-      shadows.push(`0 10px 36px rgba(0,0,0,${so})`);
+      padBg.style.boxShadow = `0 10px 36px rgba(0,0,0,${so})`;
+    } else {
+      padBg.style.boxShadow = "none";
     }
-    padBg.style.boxShadow = shadows.length ? shadows.join(", ") : "none";
 
     pad.style.borderRadius = br;
     canvas.style.borderRadius = br;

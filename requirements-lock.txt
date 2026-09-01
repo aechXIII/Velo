@@ -1,23 +1,23 @@
 # Fully pinned Windows/Python 3.10 runtime environment used for release builds.
-aiohappyeyeballs==2.6.1
-aiohttp==3.13.5
+aiohappyeyeballs==2.7.1
+aiohttp==3.14.3
 aiosignal==1.4.0
 async-timeout==5.0.1
 attrs==26.1.0
 bottle==0.13.4
-cffi==2.0.0
-clr_loader==0.2.10; sys_platform == "win32"
+cffi==2.1.1
+clr_loader==0.3.1; sys_platform == "win32"
 frozenlist==1.8.0
-idna==3.18
+idna==3.19
 multidict==6.7.1
 pillow==11.3.0
-propcache==0.4.1
+propcache==0.5.2
 proxy_tools==0.1.0
 pycparser==2.23
 pystray==0.19.5
-pythonnet==3.0.5; sys_platform == "win32"
+pythonnet==3.1.0; sys_platform == "win32"
 pywebview==6.2.1
 pywin32==312; sys_platform == "win32"
 six==1.17.0
 typing_extensions==4.16.0
-yarl==1.22.0
+yarl==1.24.5
